@@ -16,11 +16,11 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 - **Timeline** at the bottom: one column per frame, one row per layer, each cel as a small picture. A click picks the frame and the layer at once. Space plays, Left and Right step through the frames, Up and Down through the layers. Onion skin shows the neighbouring frames faintly.
 - **Colour, layers and chat** on the right. Layers can be hidden, locked, renamed (double-click), faded, reordered and merged. The palette comes from the art with one click.
 - **Selections:** a box, a lasso drawn around an area, or a polygon (click the corners, Enter closes, Backspace takes the last corner back). While something is selected, drawing stays inside it. Move with the move tool or the arrow keys (Shift: ten cells), Enter sets the moved piece down, Delete clears, Ctrl+C and Ctrl+V copy and paste (the copy also goes to the system clipboard as a PNG, and a picture copied elsewhere comes in through the import dialog), Ctrl+A selects everything, Ctrl+D or Escape lets go.
-- **Draw on all frames:** with this ticked, a stroke also changes the other frames, wherever they showed the same as this frame did before the stroke. A part that moves through is left alone.
+- **Draw on all:** with this ticked, a stroke also changes the other frames, wherever they showed the same as this frame did before the stroke. A part that moves through is left alone.
 - **Ready-made palettes:** the list next to the palette holds the built-in ones, from 4 colours to 64. Taking one changes the palette only; lock it and the art takes its colours.
 - **Locked palette:** "lock" next to the palette. From then on whatever is drawn, filled or brought in takes its nearest palette colour.
-- **Hold selection:** a spot that flickers next to motion you want to keep. Select it, go to the frame where it looks right, and press "hold selection". The studio first shows how many cells would change and marks them in every frame you step through; nothing happens until you press Apply.
-- **Check:** looks through all frames for flicker, stray fragments, holes and colours outside the palette, marks them on the canvas and lists the areas where they gather. "select" turns an area into the selection, ready for "hold selection" or a fix by hand. The list updates after every change.
+- **Hold selection:** a spot that flickers next to motion you want to keep. Select it, go to the frame where it looks right, and press "hold". The studio first shows how many cells would change and marks them in every frame you step through; nothing happens until you press Apply.
+- **Check:** looks through all frames for flicker, stray fragments, holes and colours outside the palette, marks them on the canvas and lists the areas where they gather. "select" turns an area into the selection, ready for "hold" or a fix by hand. The list updates after every change.
 - **Clean up:** thin lines to one cell and close breaks in them, remove halos beside lines, loose bits at the edge, or specks; on this frame or all. With a selection, the step is kept to it, or the selection is protected and everything else is cleaned. "Show what it would do" puts the result on the canvas with every changed cell marked; "show before" flips back. Nothing changes until you press Apply.
 - **Loop:** brings the frame you are on to life. Add what should move (clouds, water, swaying leaves, twinkling lights, smoke, fireflies, falling leaves, birds), then paint its area on the picture: the pencil adds cells, the eraser takes them away, the fill tool takes a whole area of similar colour. An area you do not paint is guessed. "Make the loop" puts the loop in place of the frames; undo brings them back.
 - **Import:** drop a picture, a GIF or a video on the canvas. It is converted first: to fit the canvas, the way pixel-cat recommends, or not at all. It lands on a new layer, after the last frame, or in place of the project.
@@ -30,6 +30,10 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 ## Joints
 
 A layer can turn around a pivot, and it can hang on another layer: a hand on a forearm, a forearm on an upper arm, a tail on a body. You draw each part once, at rest, and pose it on a few frames. The frames between follow from those.
+
+![A desk lamp bows and rises: two arms and a shade, each turning at its joint, and the light follows the shade](../media/joints.gif)
+
+`examples/projects/lamp.pixelcat` is this lamp: four drawings, three joints in a chain, a light that hangs on the shade, and two poses.
 
 1. Put each part on a layer of its own.
 2. Pick the pose tool (`J`), pick the part's layer and click where it turns: the elbow, the hip, the hinge. That is its pivot. The drawing of the frame you are on is copied to every frame that has none.

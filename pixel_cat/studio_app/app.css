@@ -85,7 +85,7 @@ aside section { padding: 10px 12px; border-bottom: 1px solid var(--line); min-he
 #composer textarea { resize: none; }
 
 footer { grid-area: 3 / 1 / 4 / 3; background: var(--panel); border-top: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
-.transport { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--quiet); white-space: nowrap; overflow-x: auto; }
+.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--quiet); white-space: nowrap; }
 .transport b { color: var(--text); }
 .transport input[type=number] { width: 68px; }
 .check { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }

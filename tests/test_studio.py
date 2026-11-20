@@ -271,6 +271,20 @@ class Joints(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No layer has a joint"):
             p.apply({"op": "bake"})
 
+    def test_the_lamp_example_bows_and_carries_its_light(self):
+        lamp = Project.load(Path(__file__).resolve().parents[1] / "examples" / "projects" / "lamp.pixelcat")
+        names = [layer["name"] for layer in lamp.layers]
+        joined = {layer["name"]: layer["joint"]["parent"] for layer in lamp.summary()["layers"] if "joint" in layer}
+        self.assertEqual(joined, {"Light": names.index("Shade"), "Lower arm": None, "Upper arm": names.index("Lower arm"), "Shade": names.index("Upper arm")})
+        frames = [lamp.composite(f) for f in range(len(lamp.frames))]
+        self.assertFalse((frames[0] == frames[4]).all())
+        arm, shade = names.index("Upper arm"), names.index("Shade")
+        self.assertTrue((lamp.shown(arm, 1) == lamp.shown(arm, 7)).all())        # the arms go down and up the same way
+        self.assertFalse((lamp.shown(shade, 1) == lamp.shown(shade, 7)).all())   # the shade lags behind, so its two ways differ
+        light = lamp.shown(names.index("Light"), 4)
+        ys, _ = np.nonzero(light[..., 3] > 0)
+        self.assertGreater(int(ys.min()), 30)                       # at rest the light points up; posed, it falls on the desk
+
     def test_turning_keeps_thin_lines_whole(self):
         from pixel_cat import joints
 
