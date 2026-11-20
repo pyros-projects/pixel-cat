@@ -1,0 +1,5 @@
+{
+  "input": "../images/lake.png",
+  "convert": {"mode": "grid", "grid": 128, "sampling": "crisp", "colors": 24},
+  "export": ["../../output/lake.png", {"path": "../../output/lake-1x.png", "scale": 1}]
+}

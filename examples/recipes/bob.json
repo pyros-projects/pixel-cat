@@ -1,0 +1,6 @@
+{
+  "input": "../images/bob.gif",
+  "convert": {"mode": "grid", "grid": 96, "sampling": "crisp", "colors": 16},
+  "media": {"frames": "all", "speed": 100, "stability": 24},
+  "export": [{"path": "../../output/bob.gif", "scale": 4}, {"path": "../../output/bob-frame-2.png", "frame": 2}]
+}

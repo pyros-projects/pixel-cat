@@ -1,0 +1,248 @@
+"""What a conversion promises. Every test builds its own input.
+
+    uv run python -m unittest discover -s tests -v
+"""
+
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from pixel_cat.jobs import execute
+from pixel_cat.palettes import PALETTES
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def colours(image):
+    """The distinct opaque colours of an RGBA array, as hex strings."""
+    return {"#%02x%02x%02x" % tuple(c) for c in image[..., :3][image[..., 3] >= 128]}
+
+
+class Case(unittest.TestCase):
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        self.rng = np.random.default_rng(11)
+
+    def save(self, array, name="in.png"):
+        Image.fromarray(np.asarray(array, dtype=np.uint8)).save(self.folder / name)
+        return name
+
+    def run_job(self, **job):
+        job.setdefault("export", [{"path": "out.png", "scale": 1}])
+        return execute(job, self.folder)
+
+    def out(self, name="out.png"):
+        return np.array(Image.open(self.folder / name).convert("RGBA"))
+
+    def painting(self, w=320, h=200):
+        """Smooth colour fields with a little texture, like a painted picture."""
+        y, x = np.mgrid[0:h, 0:w]
+        rgb = np.stack([120 + 100 * np.sin(x / 40), 110 + 90 * np.cos(y / 30), 140 + 80 * np.sin((x + y) / 55)], axis=2)
+        rgb += self.rng.normal(0, 6, rgb.shape)
+        return np.dstack([np.clip(rgb, 0, 255), np.full((h, w), 255)])
+
+
+class Stills(Case):
+    def test_grid_fits_the_longest_side_and_keeps_the_shape(self):
+        result = self.run_job(input=self.save(self.painting()), convert={"mode": "grid", "grid": 64})
+        self.assertEqual((result["width"], result["height"]), (64, 40))
+        self.assertEqual(self.out().shape[:2], (40, 64))
+
+    def test_the_colour_limit_holds(self):
+        for limit in (2, 5, 16):
+            result = self.run_job(input=self.save(self.painting()), convert={"mode": "grid", "grid": 80, "sampling": "area", "colors": limit})
+            self.assertLessEqual(len(colours(self.out())), limit)
+            self.assertEqual(result["colors"], len(colours(self.out())))
+
+    def test_a_custom_palette_is_the_only_source_of_colour(self):
+        palette = ["#102030", "#f0e0d0", "#c04040", "#40a060"]
+        self.run_job(input=self.save(self.painting()), convert={"mode": "grid", "grid": 48, "palette": palette})
+        self.assertLessEqual(colours(self.out()), set(palette))
+
+    def test_exact_sampling_with_a_fixed_palette_is_the_same_on_every_machine(self):
+        y, x = np.mgrid[0:96, 0:160]
+        image = np.dstack([x * 255 // 159, y * 255 // 95, (x + y) % 256, np.full((96, 160), 255)])
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": 40, "palette": PALETTES["pico8"]})
+        self.assertEqual(hashlib.sha256(self.out().tobytes()).hexdigest()[:16], "dc93498b4a5236d7")
+
+    def test_area_sampling_averages_and_exact_sampling_does_not(self):
+        checker = np.indices((64, 64)).sum(axis=0) % 2 * 255
+        image = np.dstack([checker] * 3 + [np.full((64, 64), 255)])
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": 8, "sampling": "area", "colors": 256})
+        self.assertTrue((np.abs(self.out()[..., :3].astype(int) - 128) <= 1).all())
+        self.run_job(input="in.png", convert={"mode": "grid", "grid": 8, "sampling": "exact", "colors": 256})
+        self.assertLessEqual(colours(self.out()), {"#000000", "#ffffff"})
+
+    def test_crisp_sampling_never_blends_and_ink_keeps_a_thin_outline(self):
+        image = np.full((80, 80, 4), 255, dtype=np.uint8)
+        image[:, :, :3] = (230, 200, 60)
+        image[:, 36:39, :3] = (20, 20, 30)                         # a line three pixels wide in cells ten wide
+        name = self.save(image)
+        self.run_job(input=name, convert={"mode": "grid", "grid": 8, "sampling": "crisp", "colors": 256})
+        self.assertEqual(colours(self.out()), {"#e6c83c"})
+        self.run_job(input=name, convert={"mode": "grid", "grid": 8, "sampling": "ink", "colors": 256})
+        self.assertEqual(colours(self.out()), {"#e6c83c", "#14141e"})
+        self.assertTrue((self.out()[:, 3, :3] == (20, 20, 30)).all())
+
+    def test_transparency_survives(self):
+        image = self.painting(120, 120)
+        image[:, :40, 3] = 0
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": 30, "sampling": "crisp", "colors": 8})
+        out = self.out()
+        self.assertTrue((out[:, :10, 3] == 0).all() and (out[:, 10:, 3] == 255).all())
+        self.assertLessEqual(len(colours(out)), 7)                 # transparency takes one of the eight
+
+    def test_a_small_area_with_its_own_colour_keeps_it(self):
+        y, x = np.mgrid[0:200, 0:200]
+        image = np.dstack([20 + x // 8, 40 + y // 6, 150 + (x + y) // 8, np.full((200, 200), 255)]).astype(np.uint8)
+        image[90:110, 90:110, :3] = (240, 130, 20)                 # one percent of the picture
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": 100, "sampling": "area", "colors": 6})
+        centre = self.out()[50, 50, :3].astype(int)
+        self.assertTrue(centre[0] > 200 and centre[2] < 80, centre)
+
+    def test_symmetry_mirrors_one_half(self):
+        for mode in ({"mode": "grid", "grid": 50}, {"mode": "faithful", "width": 200, "pixel": 4, "palette": "source"}):
+            self.run_job(input=self.save(self.painting()), convert=mode | {"symmetry": "left"})
+            out = self.out()
+            self.assertTrue((out == out[:, ::-1]).all())
+
+    def test_faithful_and_artist_stay_inside_a_named_palette(self):
+        for mode in ("faithful", "artist"):
+            self.run_job(input=self.save(self.painting()), convert={"mode": mode, "width": 240, "pixel": 6, "palette": "dawn16"})
+            self.assertLessEqual(colours(self.out()), set(PALETTES["dawn16"]))
+            self.assertEqual(self.out().shape[1], 40)
+
+    def test_a_short_palette_keeps_its_darkest_and_lightest_colour(self):
+        self.run_job(input=self.save(self.painting()), convert={"mode": "faithful", "width": 240, "pixel": 6, "palette": "sepia", "colors": 2})
+        self.assertEqual(colours(self.out()), {PALETTES["sepia"][0], PALETTES["sepia"][-1]})
+
+    def test_display_scale_enlarges_whole_cells(self):
+        result = self.run_job(input=self.save(self.painting()), convert={"mode": "grid", "grid": 32}, export=["big.png", {"path": "out.png", "scale": 1}])
+        big, small = self.out("big.png"), self.out()
+        k = result["displayScale"]
+        self.assertGreater(k, 1)
+        self.assertTrue((big == np.repeat(np.repeat(small, k, axis=0), k, axis=1)).all())
+
+
+class Recommended(Case):
+    def test_enlarged_pixel_art_gets_its_grid_back(self):
+        art = self.rng.integers(0, 6, (24, 32))
+        palette = np.array([[20, 20, 40], [230, 220, 200], [200, 60, 60], [60, 160, 90], [60, 90, 200], [240, 200, 60]])
+        small = np.dstack([palette[art], np.full((24, 32), 255)]).astype(np.uint8)
+        big = np.repeat(np.repeat(small, 8, axis=0), 8, axis=1)
+        result = self.run_job(input=self.save(big))
+        self.assertEqual(result["recommendation"]["sampling"], "exact")
+        self.assertTrue((self.out() == small).all())
+
+    def test_a_painting_gets_averaged_cells_and_a_cartoon_does_not(self):
+        painted = self.run_job(input=self.save(self.painting(600, 400)))["recommendation"]
+        self.assertEqual((painted["sampling"], painted["width"]), ("area", 256))
+        y, x = np.mgrid[0:400, 0:400]
+        reach = np.hypot(x - 201, y - 203)                          # a disc with a dark rim, on no grid
+        flat = np.full((400, 400, 4), 255, dtype=np.uint8)
+        flat[..., :3] = (70, 110, 200)
+        flat[reach < 110, :3] = (15, 15, 25)
+        flat[reach < 103, :3] = (250, 210, 70)
+        drawn = self.run_job(input=self.save(flat))["recommendation"]
+        self.assertEqual((drawn["sampling"], drawn["width"]), ("ink", 128))
+        self.assertEqual(colours(self.out()), {"#466ec8", "#fad246", "#0f0f19"})
+
+    def test_contrast_leaves_a_handful_of_colours(self):
+        result = self.run_job(input=self.save(self.painting(400, 300)), convert={"mode": "recommended", "contrast": True})
+        self.assertLessEqual(result["colors"], 6)
+
+
+class Animations(Case):
+    def gif(self, frames=6, noise=4):
+        out = []
+        for i in range(frames):
+            image = np.zeros((120, 160, 3), dtype=np.float64)
+            image[...] = (40, 70, 120)
+            image[40:80, 10 + i * 20:50 + i * 20] = (240, 200, 60)   # a block that moves
+            out.append(Image.fromarray(np.clip(image + self.rng.normal(0, noise, image.shape), 0, 255).astype(np.uint8)))
+        out[0].save(self.folder / "in.gif", save_all=True, append_images=out[1:], duration=[80, 80, 120, 80, 80, 200][:frames], loop=0)
+        return "in.gif"
+
+    def frames_of(self, name):
+        with Image.open(self.folder / name) as gif:
+            out = []
+            for i in range(gif.n_frames):
+                gif.seek(i)
+                out.append((np.array(gif.convert("RGB")), gif.info["duration"]))
+        return out
+
+    def test_a_gif_keeps_its_frames_and_timing(self):
+        result = self.run_job(input=self.gif(), convert={"mode": "grid", "grid": 40, "sampling": "area", "colors": 8}, export=["out.gif"])
+        self.assertEqual((result["frames"], result["durations"]), (6, [80, 80, 120, 80, 80, 200]))
+        self.assertEqual([d for _, d in self.frames_of("out.gif")], [80, 80, 120, 80, 80, 200])
+
+    def test_still_areas_hold_one_colour_and_motion_stays(self):
+        job = dict(input=self.gif(noise=5), convert={"mode": "grid", "grid": 40, "sampling": "area", "colors": 32}, export=["out.gif"])
+        steady = self.run_job(**job)
+        frames = [f for f, _ in self.frames_of("out.gif")]
+        corner = np.stack([f[20:, :] for f in frames])              # the block never comes here
+        self.assertTrue((corner == corner[0]).all())
+        self.assertFalse((frames[0] == frames[3]).all())
+        self.assertGreater(steady["stabilized"], 0)
+        loose = self.run_job(**job, media={"stability": 0})
+        self.assertEqual(loose["stabilized"], 0)
+
+    def test_frames_can_be_thinned_and_sped_up(self):
+        result = self.run_job(input=self.gif(), media={"frames": 3, "speed": 200}, convert={"mode": "grid", "grid": 40}, export=["out.gif"])
+        self.assertEqual((result["frames"], result["durations"]), (3, [80, 100, 140]))
+
+    def test_one_frame_as_png(self):
+        self.run_job(input=self.gif(), convert={"mode": "grid", "grid": 40, "colors": 4}, export=[{"path": "out.png", "frame": 4, "scale": 1}])
+        self.assertEqual(self.out().shape[:2], (30, 40))
+        self.assertTrue(self.out()[15, 28, 0] > 150)               # the block has reached x = 90..130
+
+    def test_a_sprite_sheet_becomes_a_loop(self):
+        sheet = np.zeros((40, 120, 4), dtype=np.uint8)
+        for i in range(3):
+            sheet[10:30, i * 40 + 5 + i * 5:i * 40 + 20 + i * 5] = (250, 80, 80, 255)
+        result = self.run_job(input=self.save(sheet), sheet={"columns": 3, "rows": 1, "delay": 150}, convert={"mode": "grid", "grid": 20, "colors": 4}, export=["out.gif"])
+        self.assertEqual((result["frames"], result["durations"], result["width"], result["height"]), (3, [150] * 3, 20, 20))
+        with Image.open(self.folder / "out.gif") as gif:
+            self.assertEqual(gif.n_frames, 3)
+            self.assertIn("transparency", gif.info)
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is not installed")
+    def test_video_out_and_back_in(self):
+        self.run_job(input=self.gif(), convert={"mode": "grid", "grid": 40, "colors": 8}, export=[{"path": "clip.mp4", "scale": 4}, {"path": "clip.webm", "scale": 4}])
+        self.assertGreater((self.folder / "clip.webm").stat().st_size, 500)
+        result = self.run_job(input="clip.mp4", media={"frames": 5}, convert={"mode": "grid", "grid": 40, "colors": 8}, export=["again.gif"])
+        self.assertEqual((result["frames"], result["width"], result["height"]), (5, 40, 30))
+
+
+class CommandLine(Case):
+    def cli(self, *args):
+        return subprocess.run([sys.executable, "-m", "pixel_cat", *args], capture_output=True, text=True, cwd=self.folder, env={"PYTHONPATH": str(ROOT), "PATH": ""})
+
+    def test_results_and_errors_are_json(self):
+        self.save(self.painting())
+        done = self.cli("convert", "in.png", "-o", "out.png", "--mode", "grid", "--grid", "20", "--scale", "1")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout)["outputs"][0]["width"], 20)
+        failed = self.cli("convert", "in.png", "-o", "out.png", "--mode", "grid", "--palette", "no-such-palette")
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("Unknown palette", json.loads(failed.stderr)["error"])
+        self.assertIn("pico8", json.loads(self.cli("catalog").stdout)["palettes"])
+
+    def test_a_failed_job_writes_nothing(self):
+        self.save(self.painting())
+        with self.assertRaises(ValueError):
+            self.run_job(input="in.png", convert={"mode": "grid", "grid": 20}, export=["kept.png", {"path": "bad.png", "frame": 3}])
+        self.assertEqual(sorted(p.name for p in self.folder.iterdir()), ["in.png"])
+
+
+if __name__ == "__main__":
+    unittest.main()

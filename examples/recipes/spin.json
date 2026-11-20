@@ -1,0 +1,6 @@
+{
+  "input": "../images/spin-sheet.png",
+  "sheet": {"columns": 4, "rows": 2, "delay": 80},
+  "convert": {"mode": "grid", "grid": 48, "sampling": "ink", "colors": 12},
+  "export": [{"path": "../../output/spin.gif", "scale": 4}]
+}
