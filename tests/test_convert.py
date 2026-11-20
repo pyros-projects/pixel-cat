@@ -223,6 +223,61 @@ class Animations(Case):
         self.assertEqual((result["frames"], result["width"], result["height"]), (5, 40, 30))
 
 
+class Loops(Case):
+    def scene(self):
+        """A bright sky with a cloud over a dark hill, and a striped lake below."""
+        image = np.full((120, 160, 4), 255, dtype=np.uint8)
+        image[:60, :, :3] = (120, 170, 230)
+        image[10:22, 30:70, :3] = (250, 250, 250)                   # the cloud
+        image[40:60, :, :3] = (30, 60, 40)                          # the hill
+        image[60:, :, :3] = (40, 90, 160)
+        image[60:, ::8, :3] = (90, 150, 210)                        # glints on the water
+        return self.save(image)
+
+    def frames_of(self, name):
+        with Image.open(self.folder / name) as gif:
+            out = []
+            for i in range(gif.n_frames):
+                gif.seek(i)
+                out.append(np.array(gif.convert("RGB")))
+        return out
+
+    def test_a_still_becomes_a_loop_that_only_moves_its_regions(self):
+        job = dict(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"],
+                   loop={"seconds": 3, "fps": 8, "regions": [{"kind": "clouds", "amount": 2}, {"kind": "water"}]})
+        result = self.run_job(**job)
+        self.assertEqual((result["frames"], result["durations"]), (24, [125] * 24))
+        frames = self.frames_of("out.gif")
+        hill = np.stack([f[40:60] for f in frames])
+        self.assertTrue((hill == hill[0]).all())                    # guessed areas: sky above the hill, water below
+        self.assertFalse((frames[0][:40] == frames[8][:40]).all())  # the cloud moved
+        self.assertFalse((frames[0][60:] == frames[5][60:]).all())  # the water moved
+        colours = {tuple(c) for f in frames for c in np.unique(f.reshape(-1, 3), axis=0)}
+        self.assertEqual(colours, {(120, 170, 230), (250, 250, 250), (30, 60, 40), (40, 90, 160), (90, 150, 210)})
+
+    def test_the_loop_closes_without_a_jump(self):
+        self.run_job(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"],
+                     loop={"seconds": 4, "regions": [{"kind": "clouds"}, {"kind": "water"}, {"kind": "sway", "area": [0, 0.33, 1, 0.5]}]})
+        frames = self.frames_of("out.gif")
+        steps = [int((frames[i] != frames[(i + 1) % len(frames)]).any(axis=2).sum()) for i in range(len(frames))]
+        self.assertLessEqual(steps[-1], max(steps[:-1]))
+
+    def test_an_area_can_be_a_box_or_a_polygon(self):
+        for area in ([0, 0, 0.5, 0.3], [[0, 0], [0.5, 0], [0.5, 0.3], [0, 0.3]]):
+            self.run_job(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"],
+                         loop={"seconds": 2, "regions": [{"kind": "clouds", "amount": 3, "area": area}]})
+            frames = np.stack(self.frames_of("out.gif"))
+            self.assertTrue((frames[:, :, 80:] == frames[0, :, 80:]).all())
+            self.assertTrue((frames[:, 36:] == frames[0, 36:]).all())
+            self.assertFalse((frames[:, :36, :80] == frames[0, :36, :80]).all())
+
+    def test_a_loop_needs_a_still_and_known_kinds(self):
+        with self.assertRaises(ValueError):
+            self.run_job(input=self.scene(), loop={"regions": [{"kind": "fog"}]}, export=["out.gif"])
+        with self.assertRaises(ValueError):
+            self.run_job(input=self.scene(), loop={"regions": [{"kind": "water", "area": [0, 0, 2, 1]}]}, export=["out.gif"])
+
+
 class CommandLine(Case):
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "pixel_cat", *args], capture_output=True, text=True, cwd=self.folder, env={"PYTHONPATH": str(ROOT), "PATH": ""})

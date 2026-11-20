@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .jobs import execute
+from .loops import KINDS
 from .options import MODES, OPTIONS, SAMPLING
 from .palettes import PALETTES
 
@@ -42,6 +43,8 @@ def parser():
     convert.add_argument("--frames", help="how many frames to take from an animation, or all")
     convert.add_argument("--speed", type=int, help="playback speed in percent")
     convert.add_argument("--stability", type=int, help="how much a still cell may flicker before it counts as motion (0 to 255)")
+    convert.add_argument("--loop", help="animate a still: comma-separated kinds, e.g. clouds,water (areas are guessed)")
+    convert.add_argument("--seconds", type=float, help="length of the loop")
     convert.add_argument("--sheet", help="split a sprite sheet into columns x rows, e.g. 4x2")
     convert.add_argument("--delay", type=int, help="sprite sheet frame duration in milliseconds")
     return app
@@ -62,6 +65,12 @@ def convert_job(args):
         job["sheet"] = {"columns": columns, "rows": rows, "delay": args.delay or 120}
     elif args.delay is not None:
         raise ValueError("--delay needs --sheet")
+    if args.loop:
+        job["loop"] = {"regions": [{"kind": kind.strip()} for kind in args.loop.split(",")]}
+        if args.seconds is not None:
+            job["loop"]["seconds"] = args.seconds
+    elif args.seconds is not None:
+        raise ValueError("--seconds needs --loop")
     media = {k: opts[k] for k in ("frames", "speed", "stability") if opts[k] is not None}
     if media.get("frames", "all") != "all":
         media["frames"] = int(media["frames"])
@@ -78,7 +87,9 @@ def catalog():
         "inputs": ["png, jpg, webp and other stills", "gif", "video (needs FFmpeg)", "sprite sheet"],
         "outputs": ["png", "gif", "mp4", "webm"],
         "recipe": {"input": "path", "convert": "mode and its settings", "media": "frames, speed, stability",
-                   "sheet": "columns, rows, delay", "export": "a path, or objects with path, scale, frame, format"},
+                   "sheet": "columns, rows, delay", "loop": "seconds, fps, seed, regions (kind, area, amount)",
+                   "export": "a path, or objects with path, scale, frame, format"},
+        "loop kinds": list(KINDS),
     }
 
 

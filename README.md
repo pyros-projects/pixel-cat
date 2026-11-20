@@ -67,6 +67,7 @@ npx skills add pyros-projects/pixel-cat -g -s pixel-cat
 
 - “Turn ~/Pictures/cat.jpg into a 64-color pixel sprite.”
 - “Make this screen recording a pixel-art GIF with 16 colors.”
+- “Make a looping pixel GIF of this landscape with drifting clouds and moving water.”
 - “Make a 15-second pixel-art film about a lighthouse keeper winding a clockwork sun.”
 
 On first use the skill clones this repository into `~/.local/share/pixel-cat/app` (on Windows, `%LOCALAPPDATA%\pixel-cat\app`), creates its Python environment and remembers the folder. Your images and films stay in your own folders. The install needs git and uv. FFmpeg is needed for video input, MP4, WebM and films. Say “update pixel-cat” to pull a new version.
@@ -122,6 +123,23 @@ Animations convert frame by frame and share one palette. Still areas would flick
 
 PNG and video outputs are enlarged to a size that is easy to look at. Pass `--scale 1` for one file pixel per cell.
 
+## Loops from a still
+
+<div align="center">
+
+![The lake picture as a loop: the clouds drift and the water ripples](media/lake-loop.gif)
+
+</div>
+
+A still picture can become a seamless loop. Name the regions and what moves in them: `clouds` drift, `water` ripples, `twinkle` makes small lights blink, `sway` moves leaves and grass, `rise` lifts smoke. Every effect only moves cells that are already there, so the palette stays, and the last frame leads back into the first.
+
+```sh
+uv run pixel-cat convert examples/images/lake.png -o output/lake.gif --loop clouds,water
+uv run pixel-cat run examples/recipes/lake-loop.json
+```
+
+The first command guesses the sky and the water. The guess is rough, and here it takes the bright mountains for sky. The recipe draws both areas as polygons instead, which is what an agent does after one look at the picture. [Loop settings](docs/recipes.md#loop)
+
 ## Make a film
 
 Give an agent in this checkout a subject and name the skill. Try “Use `pixel-cat-film` to make a 15-second portrait film about a lighthouse keeper winding a clockwork sun. Give the winding key a sound I can recognize in the dark.” The skill shows how to plan four shots, move a subject between keyframes and export a README preview. [Agent skill](.agents/skills/pixel-cat-film/SKILL.md)
@@ -141,7 +159,7 @@ uv run python .agents/skills/pixel-cat-film/scripts/render.py \
 uv run python -m unittest discover -s tests -v
 ```
 
-The tests build their own inputs and check what a conversion promises: the grid size, the color limit, palette membership, kept outlines, restored pixel grids, mirrored halves, steady still areas in a loop, and the frame counts and timings of GIF, sprite-sheet and video jobs.
+The tests build their own inputs and check what a conversion promises: the grid size, the color limit, palette membership, kept outlines, restored pixel grids, mirrored halves, steady still areas in a loop, and the frame counts and timings of GIF, sprite-sheet and video jobs, loops that close without a jump, and the film camera.
 
 ## License
 

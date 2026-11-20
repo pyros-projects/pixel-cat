@@ -55,6 +55,10 @@ with a nonzero exit.
 - The `<home>/README.md` section "Modes" explains what each mode and sampler
   does. `<home>/docs/recipes.md` is the reference for JSON recipes. Read it
   before you write one.
+- A still can become a loop (`--loop clouds,water`, or the `loop` key of a
+  recipe). The guessed areas are rough. Look at the converted picture, then
+  give each region its `area` as a box or a polygon in fractions of the
+  picture, the way `<home>/examples/recipes/lake-loop.json` does.
 - A recipe can live next to the user's files. Paths inside it resolve against
   the recipe's own folder.
 - Look at what you made before you hand it over. A PNG at `--scale 1` has one

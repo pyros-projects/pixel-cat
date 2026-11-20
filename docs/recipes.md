@@ -53,6 +53,40 @@ Steadying applies in grid and recommended mode.
 
 Treats a still image as a sprite sheet: `columns` and `rows` (1 to 16 each) cut it into frames in reading order, `delay` is the frame duration in milliseconds (default 120).
 
+## `loop`
+
+Turns a still picture into a seamless loop. The picture is converted first, then the regions move.
+
+```json
+"loop": {
+  "seconds": 4,
+  "fps": 8,
+  "regions": [
+    {"kind": "clouds", "amount": 1, "area": [[0, 0], [1, 0], [1, 0.3], [0, 0.25]]},
+    {"kind": "water", "area": [0, 0.58, 1, 1]}
+  ]
+}
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `seconds` | length of the loop, 1 to 20 | 4 |
+| `fps` | 4, 6, 8, 10 or 12 | 8 |
+| `seed` | changes which lights twinkle when | 1 |
+| `regions` | a list; each region has a `kind`, an `area` and an `amount` | |
+
+| Kind | Motion |
+| --- | --- |
+| `clouds` | drift to the right at 4 cells per second times `amount` |
+| `rise` | drift upwards, for smoke and steam |
+| `water` | rows slide sideways in waves, more towards the front |
+| `sway` | the top of the area moves, its foot stays, for leaves and grass |
+| `twinkle` | small bright cells go dark for a moment, for stars and lamps |
+
+`area` is a box `[left, top, right, bottom]`, a polygon of `[x, y]` points, or `"auto"`. Numbers are fractions of the picture, so an area holds for every grid size. A cell belongs to an area when its center lies inside. `"auto"` guesses: the sky is each column from the top down to the first clearly darker cell, the water is everything below the strongest horizontal border. Look at the picture and draw the areas when the guess is off. `amount` scales the motion (up to 8).
+
+Cells outside the regions never change. Inside, cells only move, so the colors stay the picture's own. Motions that come back on their own run a whole number of cycles. Clouds and smoke keep going, so over the last third of the loop the take that began one loop earlier fades in.
+
 ## `export`
 
 One path, one object, or a list of them. The file extension chooses the format: `.png`, `.gif`, `.mp4`, `.webm`.
