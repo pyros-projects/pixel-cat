@@ -373,6 +373,34 @@ class Loops(Case):
         with self.assertRaisesRegex(ValueError, "wind is"):
             self.run_job(**job, loop={"regions": [{"kind": "leaves", "wind": "up"}]})
 
+    def test_falling_leaves_come_in_shapes(self):
+        job = dict(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"])
+        sizes = {}
+        for shape in ("speck", "sliver", "broad", "mixed"):
+            leaves = {"kind": "leaves", "area": [0, 0, 1, 0.33], "amount": 2, "colors": ["#c9682c"], "wind": "none", "shape": shape}
+            self.run_job(**job, loop={"seconds": 2, "fps": 8, "seed": 3, "regions": [leaves]})
+            marks = (np.stack(self.frames_of("out.gif")) == np.array((201, 104, 44))).all(axis=3)
+            self.assertFalse(marks[:, 40:].any(), shape)                                    # they stay in their area
+            # the pieces of one frame: cells of a leaf touch each other, corners included
+            sizes[shape] = set()
+            for frame in marks:
+                left = {(int(y), int(x)) for y, x in np.argwhere(frame)}
+                while left:
+                    piece, edge = set(), [left.pop()]
+                    while edge:
+                        y, x = edge.pop()
+                        piece.add((y, x))
+                        near = {(y + dy, x + dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1)} & left
+                        left -= near
+                        edge.extend(near)
+                    sizes[shape].add(len(piece))
+        self.assertEqual(sizes["speck"], {1})                                               # one cell each, far apart
+        self.assertTrue(sizes["sliver"] >= {2} and max(sizes["sliver"]) <= 4)               # two cells; two leaves may touch
+        self.assertTrue({3, 4} <= sizes["broad"])                                           # four cells flat, three on edge
+        self.assertTrue({1, 2} <= sizes["mixed"] and max(sizes["mixed"]) >= 3)              # some of each
+        with self.assertRaisesRegex(ValueError, "shape is speck, sliver, broad or mixed"):
+            self.run_job(**job, loop={"regions": [{"kind": "leaves", "shape": "maple"}]})
+
     def test_a_painted_area_is_a_list_of_cells(self):
         cells = [[x, y] for y in range(5, 30) for x in range(20, 90)]
         self.run_job(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"],

@@ -17,6 +17,10 @@ from .options import keys
 
 KINDS = ("clouds", "water", "twinkle", "sway", "rise", "fireflies", "leaves", "birds")
 PARTICLES = {"fireflies": ["#ffe680"], "leaves": ["#c9682c", "#e0a13a", "#8a4a22"], "birds": ["#1b1e27"]}
+# a leaf's cells while it lies flat, and while it is turned over on its way down
+LEAVES = {"speck": (((0, 0),), ((0, 0),)),
+          "sliver": (((0, 0), (1, 0)), ((0, 0), (1, 1))),
+          "broad": (((1, 0), (0, 1), (1, 1), (2, 1)), ((0, 0), (1, 1), (2, 2)))}
 
 
 def waterline(image, low, high):
@@ -117,7 +121,7 @@ def _drift(image, mask, frames, per_frame, mover):
 def validate(regions):
     """Reject a region that cannot be carried out, with a plain reason."""
     for region in regions:
-        keys(region, {"kind", "area", "amount", "color", "colors", "wind", "size"}, "region")
+        keys(region, {"kind", "area", "amount", "color", "colors", "wind", "size", "shape"}, "region")
         if region.get("kind") not in KINDS:
             raise ValueError("A region's kind is one of " + ", ".join(KINDS))
         area = region.get("area", "auto")
@@ -136,6 +140,8 @@ def validate(regions):
             raise ValueError("wind is left, right or none")
         if region.get("size", 1) not in (1, 2, 3):
             raise ValueError("size is 1, 2 or 3")
+        if region.get("shape", "sliver") not in (*LEAVES, "mixed"):
+            raise ValueError("shape is " + ", ".join(LEAVES) + " or mixed")
 
 
 def particles(kind, image, mask, count, region, rng):
@@ -166,14 +172,16 @@ def particles(kind, image, mask, count, region, rng):
                     out[i].extend((x + dx, y + dy, colours[n % len(colours)]) for dx, dy in glow)
     elif kind == "leaves":
         wind = {"left": -1, "right": 1}.get(region.get("wind", "right"), 0)
-        for n in range(max(1, min(40, round(len(xs) / 900 * amount)))):
+        falling, shape = max(1, min(40, round(len(xs) / 900 * amount))), region.get("shape", "sliver")
+        kinds = [list(LEAVES)[k] for k in rng.integers(0, len(LEAVES), falling)] if shape == "mixed" else [shape] * falling
+        for n in range(falling):
             start, falls, sway, phase = (rng.uniform(0, wide), rng.uniform(0, tall)), int(rng.integers(1, 3)), rng.uniform(0.5, 2), rng.random()
             for i in range(count):
                 t = i / count
                 x = left + (start[0] + wind * wide * t + sway * math.sin(math.tau * (2 * t + phase))) % wide
                 y = top + (start[1] + falls * tall * t) % tall
                 tumbled = (4 * t + phase) % 1 < 0.5
-                for dx, dy in ((0, 0), (1, 1) if tumbled else (1, 0)):
+                for dx, dy in LEAVES[kinds[n]][tumbled]:
                     out[i].append((int(x) + dx, int(y) + dy, colours[n % len(colours)]))
     else:                                                          # birds: small wings that cross the region
         for n in range(max(1, min(6, round(2 * amount)))):

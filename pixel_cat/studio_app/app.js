@@ -746,17 +746,19 @@ function regionCells(region) { const out = [], w = S.doc.width; region.mask.forE
 function loopRows() {
   const box = $("loopRegions"); box.replaceChildren();
   S.regions.forEach((region, n) => {
-    const row = document.createElement("div"), dot = document.createElement("i"), kind = document.createElement("select"), amount = document.createElement("select"), paint = document.createElement("button"), gone = document.createElement("button"), note = document.createElement("small");
+    const row = document.createElement("div"), dot = document.createElement("i"), kind = document.createElement("select"), amount = document.createElement("select"), shape = document.createElement("select"), leaf = document.createElement("label"), paint = document.createElement("button"), gone = document.createElement("button"), note = document.createElement("small");
     row.className = "region"; dot.style.background = MOVES[region.kind][0];
     for (const [value, [, label]] of Object.entries(MOVES)) { const o = document.createElement("option"); o.value = value; o.textContent = label; kind.append(o); }
     kind.value = region.kind; kind.onchange = () => { region.kind = kind.value; loopRows(); overlay(); };
     for (const [value, label] of [[0.5, "a little"], [1, "normal"], [2, "more"], [4, "a lot"]]) { const o = document.createElement("option"); o.value = value; o.textContent = label; amount.append(o); }
     amount.value = region.amount; amount.onchange = () => region.amount = +amount.value;
+    for (const [value, label] of [["sliver", "slivers"], ["speck", "specks"], ["broad", "broad leaves"], ["mixed", "a mix"]]) shape.append(new Option(label, value));
+    shape.value = region.shape || "sliver"; shape.onchange = () => region.shape = shape.value; leaf.append("The leaves are ", shape); leaf.hidden = region.kind !== "leaves";
     paint.textContent = "paint"; paint.className = S.paint === region ? "on" : ""; paint.title = "Paint this area on the picture";
     paint.onclick = () => { S.paint = S.paint === region ? null : region; if (S.paint && !["pencil", "eraser", "fill"].includes(S.tool)) setTool("pencil"); loopRows(); overlay(); };
     gone.textContent = "×"; gone.title = "Remove"; gone.onclick = () => { S.regions.splice(n, 1); if (S.paint === region) S.paint = null; loopRows(); overlay(); };
     const cells = region.mask.reduce((a, b) => a + b, 0); note.textContent = cells ? `${cells} cells painted` : "area guessed (paint to set it)";
-    row.append(dot, kind, amount, paint, gone, note); box.append(row);
+    row.append(dot, kind, amount, paint, gone, leaf, note); box.append(row);
   });
 }
 function paintRegion(cells, on) { const w = S.doc.width, h = S.doc.height; for (const [x, y] of cells) if (x >= 0 && y >= 0 && x < w && y < h) S.paint.mask[y * w + x] = on ? 1 : 0; }
@@ -777,7 +779,7 @@ $("loopAdd").onclick = () => { const used = S.regions.map(r => r.kind), kind = O
 $("loopGo").onclick = async () => {
   if (!S.regions.length) return toast("Add something that moves first");
   drop(); S.paint = null; toast("Making the loop …"); S.pending++;
-  const regions = S.regions.map(r => ({ kind: r.kind, amount: r.amount, ...(r.mask.some(Boolean) ? { area: { cells: regionCells(r) } } : {}) }));
+  const regions = S.regions.map(r => ({ kind: r.kind, amount: r.amount, ...(r.kind === "leaves" && r.shape ? { shape: r.shape } : {}), ...(r.mask.some(Boolean) ? { area: { cells: regionCells(r) } } : {}) }));
   try {
     const done = await send("/api/loop", { frame: S.frame, loop: { seconds: +$("loopSeconds").value, fps: +$("loopFps").value, regions } });
     S.known = Math.max(S.known, done.rev); S.regions = []; panel("loopPanel", false); S.frame = 0; S.layer = 0; await load(true); play();

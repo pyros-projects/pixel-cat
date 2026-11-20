@@ -106,7 +106,7 @@ Turns a still picture into a seamless loop. The picture is converted first, then
 | `seconds` | length of the loop, 1 to 20 | 4 |
 | `fps` | 4, 6, 8, 10 or 12 | 8 |
 | `seed` | changes which lights twinkle when | 1 |
-| `regions` | a list; each region has a `kind`, an `area` and an `amount`. `fireflies`, `leaves` and `birds` also take a `color` or a list of `colors`; `fireflies` take `size` (1, 2 or 3: one cell, four, or a small cross); `leaves` take `wind`: `left`, `right` or `none`. | |
+| `regions` | a list; each region has a `kind`, an `area` and an `amount`. `fireflies`, `leaves` and `birds` also take a `color` or a list of `colors`; `fireflies` take `size` (1, 2 or 3: one cell, four, or a small cross); `leaves` take `wind` (`left`, `right` or `none`) and `shape`: `speck` (one cell), `sliver` (two cells, the default), `broad` (four cells that turn on edge) or `mixed`. | |
 
 | Kind | Motion |
 | --- | --- |
