@@ -1,29 +1,48 @@
 # Artwork for the three films
 
-Each film uses one four-panel background sheet and one transparent sprite. ImageGen made the source paintings from the prompts below. The PNGs beside each `story.json` are the finished `pixel-cat` conversions used by the renderer. You can render the three films from those PNGs without an image generator.
+Each film uses four background paintings and one transparent sprite. An image model made the source paintings from the prompts below. The PNGs beside each `story.json` are the finished `pixel-cat` conversions used by the renderer. You can render the three films from those PNGs without an image generator.
 
-Three panels were painted a second time, one by one, because the hands in them were not drawn right: the first panel of *Tide Bell* and the first two of *Emberwing*. The image model got the panel as a layout guide, a neighbouring panel for the style, and a prompt that puts the hand in a pose where the digits can be counted: a thumb along the rope above four stacked fingers, an open palm with the thumb set apart. Several candidates were painted for each and the fingers counted before one was chosen. Because the layout stayed, the scene files needed almost no changes: only the outline of the chrysalis in *Emberwing*'s first shot was traced again. The prompts are under each film.
+*Tide Bell* and *Emberwing* were painted shot by shot by an image model, with the first shot as the style guide for the rest. Their shots show no hands in close-up: the action is told through a rope, a bell, a lantern and a chrysalis. *Platform Zero* still uses one four-panel sheet.
 
 ## Tide Bell
 
-### Backgrounds
+Four paintings, one per shot, and one sprite. The first shot was painted first; the other three got it as a style guide.
 
-An original 2 by 2 animation background layout sheet, perfectly even quadrants, no gutters, no borders, no inset panels, no words or lettering. Overall portrait aspect ratio 2:3. Every individual quadrant is a full bleed portrait shot in a single cinematic short, ordered top left, top right, bottom left, bottom right. Exact straight divisions at 50% width and height. Hand-pixelled 1990s dark fantasy adventure game cutscene, carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, serious beautiful limited-color pixel art, no visible scanlines or pixel grid overlay. Each frame has its own composition but belongs to the same location and character. Atmospheric and readable at thumbnail size. Static background plates for later compositing. Short: an antique copper salvage diver sounds a submerged bell. Everything is underwater. Ink navy and deep peacock blue, aged ochre brass, rare electric turquoise light. TOP LEFT: macro of the diver's heavy brass glove holding a vertical braided bell rope under a basalt arch, small brass rope ring at center, specks and cable silhouetted against soft underwater light. TOP RIGHT: intimate right-facing profile of the diver's copper round porthole helmet on left half, peering at a hanging bronze ship's bell on the right; keep the bell fully visible on dark quiet water. BOTTOM LEFT: extreme close-up, frontal circular glass helmet window filling the frame, amber rim, the first cold cyan ripple reflected across the dark visor, no creatures visible. BOTTOM RIGHT: a wide establishing vertical view under a deep sea rock arch with a very small diver standing at the far bottom left on the seabed. Open empty deep blue water in the whole middle and top right for a large luminous jellyfish to be added later. Ancient submerged stone, heavy and still, mysterious, keep this quadrant brighter than pure black. No jellyfish painted on these plates.
+### Shot 1
+
+Shot 1 of a four-shot short film. The place in every shot: the seabed inside a drowned stone ruin. Ink navy and deep peacock blue water, aged ochre brass and bronze, a rare electric turquoise light from above, drifting specks and small bubbles.
+
+A close view of a thick braided rope that runs straight down through the frame, a little right of the centre, from the top edge to the bottom edge. In the upper half the rope passes through a heavy brass ring that hangs on a short chain from an encrusted wooden beam of a sunken ship, which crosses the top of the frame. The rope is taut. Around it: dark basalt arches and broken columns in the blue distance, silhouetted cables, soft shafts of underwater light from the upper left. No people, no hands, no gloves, no fish.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Shot 2
+
+Shot 2 of a four-shot short film. The place in every shot: the seabed inside a drowned stone ruin. Ink navy and deep peacock blue water, aged ochre brass and bronze, a rare electric turquoise light from above, drifting specks and small bubbles. The attached image is shot 1 of the same film. Match its drawing style, palette, level of detail and pixel size exactly.
+
+A diver's antique copper diving helmet in right-facing profile fills the left half of the frame: round side window, riveted collar, a breastplate cut off by the bottom edge. No arms and no hands are in the frame. He looks at a large bronze ship's bell that hangs in the right half of the frame on a short chain from a beam at the top; a braided rope hangs from the bell's clapper down to the bottom edge. The bell is fully visible in front of dark quiet water, with clear space around it; nothing overlaps it. Small bubbles rise from the helmet.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Shot 3
+
+Shot 3 of a four-shot short film. The place in every shot: the seabed inside a drowned stone ruin. Ink navy and deep peacock blue water, aged ochre brass and bronze, a rare electric turquoise light from above, drifting specks and small bubbles. The attached image is shot 1 of the same film. Match its drawing style, palette, level of detail and pixel size exactly.
+
+An extreme close-up, seen from the front: the round glass window of an antique copper diving helmet fills the frame, a thick riveted brass rim around dark glass, with scratches and verdigris on the brass. In the glass, the reflection of deep dark water with a first cold cyan-turquoise glimmer low at the left. No face is visible behind the glass. No hands.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Shot 4
+
+Shot 4 of a four-shot short film. The place in every shot: the seabed inside a drowned stone ruin. Ink navy and deep peacock blue water, aged ochre brass and bronze, a rare electric turquoise light from above, drifting specks and small bubbles. The attached image is shot 1 of the same film. Match its drawing style, palette, level of detail and pixel size exactly.
+
+A wide view of the floor of the drowned ruin: broken columns, an arch and worn stairs in blue haze, shafts of turquoise light falling from the upper left. At the lower left, very small, a diver in a copper helmet stands beside a wooden frame from which a bronze bell hangs. The middle and the upper part of the frame are open dark water, empty, leaving room for something large to rise. No jellyfish, no fish, no whale.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
 
 ### Moving sprite
 
-An original single sprite on a fully transparent background: a mysterious luminous deep-sea jellyfish, large umbrella bell light cyan to pale mint capped with small gold knots, slender sinuous long streamers and tendrils trailing straight down. Three-quarter frontal, full body with clear outer contour, centered and comfortably inside the image. Beautiful hand-drawn 1990s dark adventure game pixel art, strong shapes, crisp 1-cell and 2-cell clusters dark teal interior shade, electric cyan on rim. Make the inner body substantially opaque so its shape reads at 100 pixels. No glow cloud beyond the silhouette, no floor or background or text. Portrait.
-
-### First panel, painted again
-
-Repaint the first image. Keep its composition, camera angle, colours, lighting, rope, brass ring, cuff, background ruins and drawing style exactly. Change only the hand, which currently shows too few fingers.
-
-The diver's right hand in the heavy brass-plated diving glove grips the thick vertical rope the way a hand holds a pole, and we see it from the thumb side, so that all five digits are visible and can be counted:
-- The THUMB lies along the rope on the side facing us and points straight up, its armoured tip just below the brass ring.
-- Below the thumb, the FOUR FINGERS wrap around the rope from the left. Their four armoured fingertips come around the rope and sit one above the other on the right side of the rope, like four rungs: index finger at the top, then middle finger, ring finger and little finger at the bottom. Each fingertip is a separate rounded plate, with a dark gap line between neighbours. The little finger is the smallest.
-Count before you finish: one thumb pointing up plus exactly four stacked fingers. Five digits. Not three fingers, not five fingers.
-
-The back of the hand is one large curved brass plate that joins the riveted cuff; the forearm leaves the frame at the lower left corner. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+A single luminous deep-sea jellyfish as a game sprite on a fully transparent background. A large rounded umbrella bell in light cyan and pale mint with a darker teal inside and small gold knots along its rim; long slender streamers and tendrils trail straight down below it. Seen from the side, the whole body with a clear outer contour, centered, comfortably inside the image with transparent margins. The inner body is substantially opaque so that the shape reads at 100 pixels. No glow cloud beyond the silhouette, no sea floor, no background, no text. Bold hand-pixelled 1990s adventure game sprite with crisp one- and two-cell clusters. Portrait composition.
 
 ## Platform Zero
 
@@ -37,32 +56,40 @@ An original sprite on completely transparent background. Very wide landscape ima
 
 ## Emberwing
 
-### Backgrounds
+Four paintings, one per shot, and one sprite. The first shot was painted first; the other three got it as a style guide.
 
-An original 2 by 2 animation background layout sheet, perfectly even quadrants, no gutters, no borders, no inset panels, no words or lettering. Overall portrait aspect ratio 2:3. Every individual quadrant is a full bleed portrait shot in a single cinematic short, ordered top left, top right, bottom left, bottom right. Exact straight divisions at 50% width and height. Hand-pixelled 1990s dark fantasy adventure game cutscene, carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, serious beautiful limited-color pixel art, no visible scanlines or pixel grid overlay. Each frame has its own composition but belongs to the same location and character. Atmospheric and readable at thumbnail size. Static background plates for later compositing. Short: a keeper warms a chrysalis inside a forgotten glasshouse. Verdigris, deep ivy greens, umber, amber yellow and coral orange. TOP LEFT: tight macro of a weathered gloved hand sheltering a small curled amber chrysalis on a vine; warm edges in a dark botanical interior. TOP RIGHT: medium portrait of a silver-haired greenhouse keeper seen in profile leaning from the left, holding a small candle under an amber chrysalis on a branch at right, within a misty Victorian conservatory. BOTTOM LEFT: dramatically enlarged detail of the golden brown ridged chrysalis with a luminous seam across its shell, centered at mid-frame against very dark defocused foliage. No adult insect yet. BOTTOM RIGHT: large dark green arched iron greenhouse window with a soft violet dusk sky, lots of empty teal space in center and top center for a luminous flying moth to be composited. Lean wiry fern silhouettes along sides, tiny keeper holding a candle at the extreme bottom left, subtle orange floor reflections. No adult butterflies or moths on these background plates.
+### Shot 1
+
+Shot 1 of a four-shot short film. The place in every shot: an abandoned Victorian glasshouse at night. Verdigris ironwork, deep ivy greens and umber shadows; warm amber and coral-orange light from a lantern and from a chrysalis; cold silver-blue moonlight through the glass.
+
+A close view of a low stone sill inside the glasshouse. In the lower left third stands an old brass storm lantern with a round glass chimney and a small steady flame inside; its light warms the stone, a clay pot and a few fern fronds around it. In the upper right, an amber chrysalis hangs from the tip of a bare, thin twig that enters from the top edge. The chrysalis hangs completely free in front of plain dark background: nothing overlaps it, no leaf touches it, and there is clear empty darkness all around it, at least as wide as the chrysalis itself. It is a ridged, spiral-banded golden-brown shell, about one fifth of the frame height, glowing faintly on the side that faces the lantern. Far behind, out of focus, the dim grid of the glass wall with a trace of moonlight. No people, no hands, no insects.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Shot 2
+
+Shot 2 of a four-shot short film. The place in every shot: an abandoned Victorian glasshouse at night. Verdigris ironwork, deep ivy greens and umber shadows; warm amber and coral-orange light from a lantern and from a chrysalis; cold silver-blue moonlight through the glass. The attached image is shot 1 of the same film. Match its drawing style, palette, level of detail and pixel size exactly.
+
+An extreme close-up of the same amber chrysalis from shot 1. It hangs from its thin twig, which enters from the top edge, and fills the middle of the frame: about 60 percent of the frame height, centred. A golden-brown shell with spiral ridges. A thin luminous seam, bright yellow-white, runs down its surface from the upper right to the lower left like a crack that is about to open, with a warm glow around it. Behind it only very dark, soft, out-of-focus foliage; nothing overlaps the chrysalis and nothing touches it. No insect yet. No people, no hands.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Shot 3
+
+Shot 3 of a four-shot short film. The place in every shot: an abandoned Victorian glasshouse at night. Verdigris ironwork, deep ivy greens and umber shadows; warm amber and coral-orange light from a lantern and from a chrysalis; cold silver-blue moonlight through the glass. The attached image is shot 1 of the same film. Match its drawing style, palette, level of detail and pixel size exactly.
+
+A close-up a moment later: the chrysalis from shot 1 has split open and is empty. The two halves of the thin golden-brown shell hang apart on the twig like an opened seed pod, in the middle of the frame; its inside glows orange like embers. A few bright sparks drift from it towards the top edge. No insect is visible: it has already left. Behind it very dark out-of-focus foliage with a few tiny orange points of light. No people, no hands.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Shot 4
+
+Shot 4 of a four-shot short film. The place in every shot: an abandoned Victorian glasshouse at night. Verdigris ironwork, deep ivy greens and umber shadows; warm amber and coral-orange light from a lantern and from a chrysalis; cold silver-blue moonlight through the glass. The attached image is shot 1 of the same film. Match its drawing style, palette, level of detail and pixel size exactly.
+
+A wide view of the glasshouse interior at night, seen from near the floor, looking up at the tall arched glass wall and roof with verdigris iron ribs. A large full moon stands behind the panes in the upper right and casts silver-blue light and the long shadows of the glazing bars. Palms, ferns and hanging vines frame the left edge, the right edge and the bottom. At the lower left, small, the brass storm lantern from shot 1 glows on its stone sill. The middle of the frame is open dark air, empty, leaving room for something to fly. No moth, no birds, no people.
+
+Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
 
 ### Moving sprite
 
-A single magnificent ember silk moth game sprite on a fully transparent background. Frontal dorsal view, symmetrical wings open and flat left/right, body and antennae on central vertical axis, head at top. Broad orange-coral and muted copper upper wings, creamy yellow translucent-looking eyespots, small dark flecks and deep plum markings, long thin forked tails hanging below. Entire silhouette isolated with comfortable margins, no ground, no surrounding glow. Original intricate hand-pixelled 1990s adventure cutscene asset, broad pixel clusters that read clearly at 85 pixels, dramatic graphic silhouette. No text or other objects. Square composition.
-
-### First panel, painted again
-
-Repaint the first image. Keep its colours, lighting, the vines and ivy leaves, the small amber chrysalis hanging on its thin stem in the right half of the frame, the dark glasshouse background and the drawing style exactly. Change the hand: give it a new, simple pose.
-
-The keeper holds her LEFT hand upright behind the chrysalis as a windbreak, and we look at the PALM of the brown leather work glove. The hand is open like a hand raised to say "stop", tilted a little to the right:
-- The FOUR FINGERS are straight and close together and point up towards the upper right corner. They are four separate fingers of similar width with a clear dark line between neighbours; the middle finger is the longest, the little finger (on the right) the shortest.
-- The THUMB stands apart on the left side of the hand and points up towards the upper left, shorter and thicker than the fingers, with a clear gap between thumb and index finger.
-- Below the fingers the broad palm with a stitched seam, then the wrist and the cuff of the glove, which leave the frame at the bottom left corner.
-Count before you finish: one thumb plus exactly four fingers. Five digits. No sixth finger, no finger below the palm, no fused fingers.
-
-The chrysalis hangs in front of the lower right part of the palm with a little air around it, and its warm amber light falls on the palm and the fingers. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
-
-### Second panel, painted again
-
-Paint a new version of the first image: the same shot, the same composition, camera angle, colours and lighting. The second image shows another shot of the same film; match its drawing style exactly.
-
-The shot: a medium portrait of a silver-haired greenhouse keeper in profile, in the left half of the frame, facing right, leaning forward. She holds a small candle on a flat brass dish under an amber chrysalis that hangs from a branch at the right. Behind her a misty Victorian conservatory with iron arches and a violet dusk sky. Keep the candle flame, the dish and the chrysalis where they are in the first image.
-
-The hand that holds the dish must be anatomically correct and easy to read: her right hand in a brown leather glove, palm up under the dish, four fingers side by side supporting it from below with their tips visible at the far edge, the thumb resting on the rim of the dish on the near side. Exactly five digits, natural proportions, wrist and sleeve cuff connected naturally. Her face stays calm, eyes lowered to the flame.
-
-Verdigris and deep ivy greens, umber, amber yellow and coral orange light from the candle on her face, hair and glove. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+A single magnificent ember silk moth as a game sprite on a fully transparent background. Seen from directly above, symmetrical, wings spread flat to the left and right, body and feathery antennae on the central vertical axis, head at the top. Broad coral-orange and copper upper wings with creamy yellow eyespots and deep plum markings, the wing edges glowing like embers, two short tails below. The whole silhouette is isolated with comfortable transparent margins: no ground, no shadow, no glow cloud around it, no background. Bold hand-pixelled 1990s adventure game sprite, broad pixel clusters and a crisp outline that reads clearly at 85 pixels wide. No text. Square composition.

@@ -43,7 +43,7 @@
 
 </div>
 
-Play the MP4s to hear the diver's bell, the lever hitting its stop and the chrysalis cracking. ImageGen supplied the paintings. The film scripts convert them with pixel-cat, move the props and sprites on a 240 × 360 grid, and synthesize the stereo sound. The camera moves between cells, so zooms and pans stay sharp without shimmering. FFmpeg encodes the 720 × 1080 MP4s. [Artwork prompts](examples/films/ART.md)
+Play the MP4s to hear the diver's bell, the lever hitting its stop and the chrysalis cracking. An image model supplied the paintings. The film scripts convert them with pixel-cat, move the props and sprites on a 240 × 360 grid, and synthesize the stereo sound. The camera moves between cells, so zooms and pans stay sharp without shimmering. FFmpeg encodes the 720 × 1080 MP4s. [Artwork prompts](examples/films/ART.md)
 
 ## A 30-second game intro
 

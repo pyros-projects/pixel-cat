@@ -120,8 +120,9 @@ def review(story_path, out):
         if "deform" in shot:
             cx, cy = shot["deform"]["center"]
             rx, ry = shot["deform"]["radius"]
-            box = (max(0, int(cx - rx / 2)), max(0, int(cy - ry / 2)), min(size[0], int(cx + rx / 2)), min(size[1], int(cy + ry / 2)))
-            close = max(1, min(4, 330 // max(box[2] - box[0], box[3] - box[1])))
+            reach_x, reach_y = min(max(rx / 2, 50), 80), min(max(ry / 2, 50), 100)   # the middle of the pull, large enough to read
+            box = (max(0, int(cx - reach_x)), max(0, int(cy - reach_y)), min(size[0], int(cx + reach_x)), min(size[1], int(cy + reach_y)))
+            close = max(1, min(4, 440 // max(box[2] - box[0], box[3] - box[1])))
             keys = sorted({min(len(bare) - 1, round(k[0] * fps)) for k in shot["deform"]["move"]})
             sheets.append(sheet([tile(plate, box, close, "as painted")] + [tile(bare[i], box, close, f"#{i} {i / fps:.2f}s") for i in keys], 6, out / f"shot-{number}-pull.png"))
             rest = int((np.asarray(bare[0].convert("RGB")) != np.asarray(plate)).any(axis=2).sum()) if shot["deform"]["move"][0][1:] == [0, 0] and not shot.get("layers") else 0

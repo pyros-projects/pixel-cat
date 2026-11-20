@@ -97,13 +97,25 @@ class PaintedProps(unittest.TestCase):
 
     def test_turning_keeps_a_thin_line_whole(self):
         art = Image.new("RGBA", (41, 41))
-        for i in range(41):
-            art.putpixel((20, i), (255, 255, 255, 255))             # one cell wide
-        for degrees in (7, 20, 33):
+        for i in range(5, 36):
+            art.putpixel((20, i), (255 - 5 * i, 200, 40 + 5 * i, 255))   # one cell wide, every cell another shade
+        for degrees in (3, 7, 20, 33):
             turned = np.asarray(render.rotate_cells(art, degrees, (20, 20)))[..., 3] > 0
-            rows = turned.any(axis=1)
-            self.assertGreaterEqual(rows.sum(), 30)                 # no gaps along its length
-            self.assertLessEqual(turned.sum(axis=1).max(), 2)       # and it stays thin
+            rows = np.flatnonzero(turned.any(axis=1))
+            self.assertEqual(len(rows), rows[-1] - rows[0] + 1)     # no gaps along its length
+            self.assertGreaterEqual(len(rows), 25)
+            self.assertLessEqual(turned.sum(axis=1).max(), 3)       # and it stays thin
+
+    def test_turning_keeps_a_thin_line_whole_on_its_ground(self):
+        art = Image.new("RGBA", (41, 41), (10, 20, 30, 255))        # the line sits on an opaque ground this time
+        for i in range(5, 36):
+            art.putpixel((20, i), (250, 220, 120, 255))
+        for degrees in (3, 7, 20, 33):
+            turned = np.asarray(render.rotate_cells(art, degrees, (20, 20)))
+            bright = turned[..., 0] > 200
+            rows = np.flatnonzero(bright.any(axis=1))
+            self.assertEqual(len(rows), rows[-1] - rows[0] + 1, degrees)
+            self.assertGreaterEqual(len(rows), 25)
 
 
 if __name__ == "__main__":

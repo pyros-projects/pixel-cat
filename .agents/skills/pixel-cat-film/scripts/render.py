@@ -80,14 +80,16 @@ def lift(plate, polygon, window=3, snap=True):
     h, w = hole.shape
     for round_ in range(3):
         leaked, ring = outline_leak(art, hole)
-        if leaked.sum() <= max(4, 0.05 * ring):
+        if not leaked.any() or (not snap and leaked.sum() <= max(4, 0.05 * ring)):
             break
-        if not snap or round_ == 2:
+        if not snap or (round_ == 2 and leaked.sum() > max(4, 0.05 * ring)):
             ys, xs = np.nonzero(leaked)
             raise ValueError(
                 f"The cutout's outline cuts through the prop: {int(leaked.sum())} of the {ring} cells just outside it still "
                 f"show the prop (around x {xs.min()}-{xs.max()}, y {ys.min()}-{ys.max()}). Trace the outline again so that it "
                 "encloses the whole prop with its rim. Otherwise a ghost of the prop stays behind when it moves.")
+        if round_ == 2:
+            break                                                 # a few cells that keep leaking: a neighbour, not the prop
         hole |= leaked
     mask = Image.fromarray(hole.astype(np.uint8) * 255)
     bounds = mask.getbbox()
@@ -132,22 +134,31 @@ def lift(plate, polygon, window=3, snap=True):
 
 
 def rotate_cells(art, degrees, center):
-    """Rotate pixel art without chewing it up: enlarge four times, rotate, then give each cell the colour
-    that fills most of it. Thin lines and ridges keep their width instead of breaking into crumbs."""
+    """Rotate pixel art without chewing it up: enlarge four times, rotate, then decide each cell.
+
+    A cell is filled when at least half of it is covered, and it takes the colour that covers most of it;
+    in a close vote the colour at its centre decides. Thin lines stay whole, with or without ground around
+    them, and broad shapes keep their edges.
+    """
     k = 4
     big = art.resize((art.width * k, art.height * k), NEAREST).rotate(
         degrees, NEAREST, center=(center[0] * k + k / 2, center[1] * k + k / 2))
     cells = np.asarray(big).reshape(art.height, k, art.width, k, 4).transpose(0, 2, 1, 3, 4).reshape(art.height, art.width, k * k, 4)
     solid = cells[..., 3] >= 128
-    code = (cells[..., 0].astype(np.int64) << 16 | cells[..., 1].astype(np.int64) << 8 | cells[..., 2]) * solid - (~solid)
+    filled = solid.sum(axis=2) * 2 >= k * k
+    code = np.where(solid, cells[..., 0].astype(np.int64) << 16 | cells[..., 1].astype(np.int64) << 8 | cells[..., 2], -1)
     ordered = np.sort(code, axis=2)
     runs = np.concatenate([np.ones(ordered.shape[:2] + (1,), dtype=bool), ordered[..., 1:] != ordered[..., :-1]], axis=2)
     start = np.maximum.accumulate(np.where(runs, np.arange(k * k), 0), axis=2)
-    length = np.arange(k * k) - start + 1
+    length = np.where(ordered >= 0, np.arange(k * k) - start + 1, 0)       # empty subcells do not vote
     winner = np.take_along_axis(ordered, length.argmax(axis=2)[..., None], axis=2)[..., 0]
+    # When the vote is close, the colour at the cell's centre decides. A line one cell wide that falls between
+    # two cells would otherwise lose in both and break into dashes.
+    centre = code[..., k * (k // 2) + k // 2]
+    close = (centre >= 0) & ((code == centre[..., None]).sum(axis=2) + 2 >= length.max(axis=2))
+    winner = np.where(close, centre, winner)
     out = np.zeros((art.height, art.width, 4), dtype=np.uint8)
-    seen = winner >= 0
-    out[seen] = np.stack([winner[seen] >> 16, winner[seen] >> 8 & 255, winner[seen] & 255, np.full(seen.sum(), 255)], axis=1)
+    out[filled] = np.stack([winner[filled] >> 16, winner[filled] >> 8 & 255, winner[filled] & 255, np.full(filled.sum(), 255)], axis=1)
     return Image.fromarray(out)
 
 
