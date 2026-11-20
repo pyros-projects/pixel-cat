@@ -10,6 +10,7 @@ const TOOLS = [
   ["melt", "≋", "N", "Melt brush: small flecks join the shape around them"], ["edge", "◎", "O", "Edge: click an area to give it a rim in the current colour"],
   ["swap", "⇄", "C", "Swap brush: the colour you start on becomes the current colour"],
   ["mask", "▨", "A", "Paint a selection with the brush; Alt takes cells away"],
+  ["guard", "⊘", "S", "Protect: paint cells that clean up and the melt brush leave alone; Alt takes cells away"],
   ["move", "✥", "V", "Move the selection or the whole cel"], ["pose", "↻", "J", "Pose: turn and move a layer around its joint"],
   ["hand", "✋", "H", "Pan (or hold Space)"]];
 const S = { doc: null, meta: {}, cels: [], frame: 0, layer: 0, tool: "pencil", colour: "#f2a65a", size: 1, mirror: false,
@@ -199,6 +200,13 @@ function overlay() {
       for (let i = 0; i < mask.length; i++) if (mask[i]) ctx.fillRect(X(i % w) + inset, Y(Math.floor(i / w)) + inset, size, size);
     }
   }
+  const kept = guard();
+  if (kept) {                               // protected cells: hatched, inside an outline that shows on any picture
+    const w = S.doc.width; ctx.strokeStyle = "rgba(255,214,102,0.9)"; ctx.lineWidth = 1; ctx.beginPath();
+    kept.forEach((on, i) => { if (on) { const l = X(i % w), t = Y(Math.floor(i / w)); ctx.moveTo(l, t + z); ctx.lineTo(l + z, t); } });
+    ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = "#0b0c10"; edge(ctx, kept, 0, 0, w, S.doc.height);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = "#ffd666"; edge(ctx, kept, 0, 0, w, S.doc.height); ctx.lineWidth = 1;
+  }
   if (S.melting) { const w = S.doc.width; ctx.fillStyle = "rgba(94,196,200,0.4)"; for (const i of S.melting) ctx.fillRect(X(i % w), Y(Math.floor(i / w)), z, z); }
   if (S.tool === "pose") {                  // the pivots, and a line from each to the one it hangs on
     S.doc.layers.forEach((layer, i) => {
@@ -277,6 +285,12 @@ function inSel(x, y) {                       // drawing stays inside the selecti
   const s = S.sel; if (!s) return true;
   return x >= s.x && y >= s.y && x < s.x + s.w && y < s.y + s.h && (!s.mask || !!s.mask[(y - s.y) * s.w + x - s.x]);
 }
+function guard(create) {                    // the protected cells, one mark per cell of the canvas; they outlive the selection
+  const n = S.doc.width * S.doc.height; if (S.guard && S.guard.length !== n) S.guard = null;
+  if (!S.guard && create) S.guard = new Uint8Array(n); return S.guard;
+}
+function spared(x, y) { const kept = guard(); return !!kept && !!kept[y * S.doc.width + x]; }
+function sparedCells() { const kept = guard(), w = S.doc.width, out = []; if (kept) kept.forEach((on, i) => { if (on) out.push([i % w, Math.floor(i / w)]); }); return out; }
 function shapeFrom(points) {                // the cells whose centre lies inside a drawn outline
   if (points.length < 3) return null;
   const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
@@ -396,7 +410,7 @@ let drag = null;
 stage.addEventListener("pointerdown", event => {
   if (!S.doc || event.button === 2) return;
   stage.setPointerCapture(event.pointerId); stopPlaying();
-  const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey && S.tool !== "pose" && S.tool !== "mask" ? "picker" : S.tool;
+  const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey && !["pose", "mask", "guard"].includes(S.tool) ? "picker" : S.tool;
   drag = { tool, x, y, lastX: x, lastY: y, startX: event.clientX, startY: event.clientY, panX: S.panX, panY: S.panY, shift: event.shiftKey };
   if (tool === "hand") { S.panned = S.moved = true; return; }
   if (S.paint && ["pencil", "eraser", "fill"].includes(tool)) {
@@ -423,6 +437,11 @@ stage.addEventListener("pointerdown", event => {
     for (const [px, py] of dots(x, y)) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height) drag.marks[py * S.doc.width + px] = drag.take ? 0 : 1;
     S.sel = selectionFrom(drag.marks); draw(); return;
   }
+  if (tool === "guard") {                    // each stroke protects more cells; with Alt it sets them free
+    drop(); drag.guard = guard(true); drag.take = event.altKey;
+    for (const [px, py] of dots(x, y)) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height) drag.guard[py * S.doc.width + px] = drag.take ? 0 : 1;
+    overlay(); return;
+  }
   if (tool === "polygon") {
     drop(); drag = null; const at = pointAt(event);
     if (S.poly && S.poly.length >= 3 && Math.hypot((at[0] - S.poly[0][0]) * S.zoom, (at[1] - S.poly[0][1]) * S.zoom) < 8) return closePolygon();
@@ -430,7 +449,7 @@ stage.addEventListener("pointerdown", event => {
   }
   if (!usable()) { drag = null; return; }
   if (tool === "move") { lift(); drag.fx = S.float.x; drag.fy = S.float.y; draw(); return; }
-  if (tool === "melt") { drop(); drag.melt = new Set(); for (const [px, py] of dots(x, y)) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py)) drag.melt.add(py * S.doc.width + px); S.melting = drag.melt; overlay(); return; }
+  if (tool === "melt") { drop(); drag.melt = new Set(); for (const [px, py] of dots(x, y)) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py) && !spared(px, py)) drag.melt.add(py * S.doc.width + px); S.melting = drag.melt; overlay(); return; }
   drop(); S.drawing = true;
   if (tool === "swap") { const p = cel(true).getContext("2d").getImageData(Math.max(0, Math.min(S.doc.width - 1, x)), Math.max(0, Math.min(S.doc.height - 1, y)), 1, 1).data; drag.from = [p[0], p[1], p[2], p[3]]; swapCells(dots(x, y), drag.from); draw(); }
   if (tool === "edge") { rim(x, y); draw(); }
@@ -464,8 +483,12 @@ stage.addEventListener("pointermove", event => {
     for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height) drag.marks[py * S.doc.width + px] = drag.take ? 0 : 1;
     drag.lastX = x; drag.lastY = y; S.sel = selectionFrom(drag.marks); overlay(); return;
   }
+  if (drag.guard) {
+    for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height) drag.guard[py * S.doc.width + px] = drag.take ? 0 : 1;
+    drag.lastX = x; drag.lastY = y; overlay(); return;
+  }
   if (drag.melt) {
-    for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py)) drag.melt.add(py * S.doc.width + px);
+    for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py) && !spared(px, py)) drag.melt.add(py * S.doc.width + px);
     drag.lastX = x; drag.lastY = y; overlay(); return;
   }
   if (drag.tool === "swap" && drag.from) { swapCells(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.from); drag.lastX = x; drag.lastY = y; draw(); return; }
@@ -492,6 +515,7 @@ stage.addEventListener("pointerup", event => {
     return;
   }
   if (region) { loopRows(); return; }
+  if (tool === "guard") { if (S.guard && !S.guard.some(Boolean)) S.guard = null; tidyForm(); overlay(); return; }
   if (path) { S.sel = shapeFrom(path); draw(); context(); reportView(); return; }
   if (S.preview) { put(S.preview, false); S.preview = null; }
   if (S.drawing) { S.drawing = false; draw(); commit(); }
@@ -718,8 +742,10 @@ function tidyForm() {
   frames.replaceChildren(new Option("this frame", "this"), ...(picked ? [new Option(`frames ${picked[0] + 1} to ${picked[picked.length - 1] + 1}`, "picked")] : []), new Option("all frames", "all"));
   frames.value = [...frames.options].some(o => o.value === was) ? was : "this";
   $("tidyArea").hidden = !S.sel; $("tidyWhere").hidden = !!S.sel;
-  $("tidyWhere").textContent = "On the whole layer. Select an area first to keep the step to it, or to protect it.";
+  $("tidyWhere").textContent = "On the whole layer. Select an area first to keep the step to it, or paint cells with the protect brush (S) and they stay as they are.";
+  const safe = sparedCells().length; $("tidyKept").hidden = !safe; $("tidyKeptText").textContent = `${safe} cell${safe === 1 ? " is" : "s are"} protected and stay${safe === 1 ? "s" : ""} as ${safe === 1 ? "it is" : "they are"}.`;
 }
+$("tidyKeptClear").onclick = () => { S.guard = null; tidyForm(); overlay(); };
 $("tidy").onclick = () => { panel("cleanup", $("cleanup").hidden); tidyForm(); };
 $("cleanupClose").onclick = () => panel("cleanup", false); $("tidyStep").onchange = tidyForm;
 $("tidyGo").onclick = () => {
@@ -731,7 +757,12 @@ $("tidyGo").onclick = () => {
   else if (kind === "smooth") step.passes = +$("tidyHow").value;
   else if (kind === "smooth-lines") { Object.assign(step, { what: "lines", passes: +$("tidyHow").value, width: +$("tidyWidth").value }); if ($("tidyInk").value === "colour") step.color = S.colour; }
   else step.strength = $("tidyHow").value;
-  if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] }, $("tidyProtect").value === "outside" ? { protect: true } : {});
+  const safe = sparedCells(), outside = $("tidyProtect").value === "outside";
+  if (safe.length) {                          // protected cells stay out of it, whatever the selection says
+    const key = ([x, y]) => y * S.doc.width + x, held = new Set(safe.map(key)), chosen = selectedCells().filter(c => !held.has(key(c)));
+    if (S.sel && !outside) { if (!chosen.length) return toast("Everything in the selection is protected"); step.cells = chosen; }
+    else Object.assign(step, { cells: S.sel ? [...safe, ...chosen] : safe, protect: true });
+  } else if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] }, outside ? { protect: true } : {});
   if ($("tidyOnly").value) step.only = [S.colour];
   const reach = $("tidyFrames").value, picked = pickedFrames(), frames = reach === "all" ? "all" : reach === "picked" && picked ? picked : [S.frame];
   if (frames === "all" || frames.length > 1) step.steady = true;       // what stands still stays the same in every frame
