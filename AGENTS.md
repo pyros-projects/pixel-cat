@@ -11,6 +11,9 @@ uv run pixel-cat catalog
 
 Always use `uv`. The README says what the tool promises; `docs/recipes.md` and `docs/studio.md` are the references.
 
+The page tests need a browser to press the studio's controls with: Chrome, Edge or Brave where one is installed,
+or the program named in `PIXEL_CAT_BROWSER`. Without one they are skipped, and the run says so.
+
 ## How work is organised
 
 1. **Every change starts as an issue**, from a template: Feature, Task or Bug.
@@ -35,6 +38,8 @@ Always use `uv`. The README says what the tool promises; `docs/recipes.md` and `
   each one before it goes to a person; a loop that is fine at speed can hide a broken frame. In the studio, press
   every new control with real pointer input, button down and up at its place on the screen. A click sent by
   script reaches the control directly and passes where a hand's click was caught by the canvas beneath it.
+  `tests/test_page.py` presses the page that way in a browser without a window; a new control gets its press
+  there.
 - **Try it at working size.** A project of 384 by 216 cells with 80 frames and jointed layers shows what a
   16-cell test cannot: how long a change takes, and what a held drawing costs.
 - **A new kind of defect gets a mechanism, not a promise:** a check in the tool, an error that names the place, or
