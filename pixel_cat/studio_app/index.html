@@ -157,6 +157,7 @@
     <label>Cells get <select id="importSampling"><option value="crisp">their dominant colour</option><option value="ink">their dominant colour, outlines kept</option><option value="area">the average of their area</option><option value="exact">the pixel under their centre</option></select></label>
     <label id="importPaletteRow">Colours come from <select id="importPalette"><option value="own">the picture</option><option value="project">this project's palette</option></select></label>
     <label class="check"><input type="checkbox" id="importCutout"> make the background transparent</label>
+    <label class="check" title="Without this every cell comes in solid or empty. With it, cells that were partly see-through stay so: soft shadows, glows, smoke."><input type="checkbox" id="importSoft"> keep soft edges: shadows and glows stay see-through</label>
     </div>
     <menu><button value="cancel">Cancel</button><button id="importGo" value="go" class="primary">Bring in</button></menu>
   </form>

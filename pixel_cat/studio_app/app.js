@@ -900,8 +900,10 @@ function offer(file) {
   const empty = !S.cels.some(row => row.some(Boolean)), project = /\.pixelcat$/i.test(file.name);
   $("importConvert").hidden = project; $("importPaletteRow").hidden = S.doc.palette.length < 2; $("importPalette").value = S.doc.locked ? "project" : "own";
   $("importHow").options[0].textContent = project ? "on a new layer, flattened" : "on a new layer"; $("importHow").options[1].textContent = project ? "after the last frame, with its layers" : "after the last frame";
-  $("importHow").value = empty ? "project" : project ? "frames" : "layer"; $("importMode").value = empty ? "recommended" : "fit"; $("importDialog").showModal();
+  $("importHow").value = empty ? "project" : project ? "frames" : "layer"; $("importMode").value = empty ? "recommended" : "fit"; softChoice(); $("importDialog").showModal();
 }
+function softChoice() { const off = $("importMode").value === "recommended"; $("importSoft").disabled = off; if (off) $("importSoft").checked = false; }   // the recommended way decides the edges itself
+$("importMode").onchange = softChoice;
 $("import").onclick = () => $("file").click();
 $("file").onchange = event => { if (event.target.files[0]) offer(event.target.files[0]); event.target.value = ""; };
 $("importDialog").addEventListener("close", async () => {
@@ -911,6 +913,7 @@ $("importDialog").addEventListener("close", async () => {
   else if (mode === "recommended") settings.convert = { mode: "recommended" };
   else if (mode === "native") settings.convert = { mode: "grid", grid: "native", sampling: "exact", colors: 256 };
   else settings.convert = { mode: "grid", grid: Math.max(S.doc.width, S.doc.height), sampling: $("importSampling").value, colors: +$("importColours").value };
+  if (!project && mode !== "recommended" && $("importSoft").checked) settings.convert.alpha = "soft";
   if (!project && $("importCutout").checked) settings.edits = [{ op: "cutout" }];
   if (!project && !$("importPaletteRow").hidden && $("importPalette").value === "project") settings.palette = "project";
   toast("Converting " + incoming.name + " …"); drop(); S.pending++;
@@ -945,7 +948,7 @@ document.addEventListener("paste", async event => {
   const file = [...(event.clipboardData?.files || [])].find(f => f.type.startsWith("image/"));
   if (!file || S.clipOnlyHere || await sameAsClip(file)) return pasteClip();
   offer(new File([file], "picture from the clipboard.png", { type: file.type }));   // a picture from elsewhere comes in like a dropped one
-  try { const picture = await createImageBitmap(file); if (picture.width <= S.doc.width && picture.height <= S.doc.height) { $("importMode").value = "native"; $("importHow").value = "layer"; } } catch { /* the dialog's own choice stands */ }
+  try { const picture = await createImageBitmap(file); if (picture.width <= S.doc.width && picture.height <= S.doc.height) { $("importMode").value = "native"; $("importHow").value = "layer"; softChoice(); } } catch { /* the dialog's own choice stands */ }
 });
 stage.addEventListener("dragover", event => { event.preventDefault(); stage.classList.add("drop"); });
 stage.addEventListener("dragleave", () => stage.classList.remove("drop"));

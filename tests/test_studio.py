@@ -501,6 +501,21 @@ class Studios(unittest.TestCase):
         self.assertTrue(found <= {"#000000", "#ffffff", "#ff0000"} and len(found) > 1)
         self.assertEqual(done["summary"]["colors"], len(found))
 
+    def test_a_picture_comes_in_with_soft_edges_when_asked(self):
+        picture = np.zeros((64, 64, 4), dtype=np.uint8)
+        picture[8:40, 16:48] = (200, 60, 60, 255)                    # a block ...
+        picture[44:56, 12:52] = (0, 0, 0, 90)                        # ... over a soft shadow
+        soft = {}
+        for alpha in ("hard", "soft"):
+            settings = urllib.parse.quote(json.dumps({"convert": {"mode": "grid", "grid": 16, "colors": 8, "alpha": alpha}}))
+            request = urllib.request.Request(f"{self.url}/api/import?name=block.png&how=project&settings={settings}", data=png_bytes(picture), method="POST")
+            urllib.request.urlopen(request).read()
+            cel = Project.load(self.folder / "s.pixelcat").composite(0)
+            soft[alpha] = int(((cel[..., 3] > 0) & (cel[..., 3] < 255)).sum())
+            self.assertTrue((cel[3:9, 5:11] == (200, 60, 60, 255)).all())      # the block is solid either way
+        self.assertEqual(soft["hard"], 0)                            # every cell solid or empty
+        self.assertGreater(soft["soft"], 20)                         # the shadow is still a shadow
+
     def test_a_project_file_comes_in_with_its_layers(self):
         other = Project(8, 8)
         other.apply({"op": "set-layer", "layer": 0, "name": "Sky"})
