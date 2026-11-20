@@ -123,6 +123,20 @@ Animations convert frame by frame and share one palette. Still areas would flick
 
 PNG and video outputs are enlarged to a size that is easy to look at. Pass `--scale 1` for one file pixel per cell.
 
+## Sprites
+
+<div align="center">
+
+![A potion icon on a paper background becomes a 44 by 64 sprite with a transparent background and an outline](media/potion-sprite.png)
+
+</div>
+
+```sh
+uv run pixel-cat convert icon.png -o sprite.png --mode grid --grid 64 --sampling ink --colors 12 --cutout --trim --outline "#101018"
+```
+
+`--cutout` makes the background transparent, `--trim` crops to the drawing and `--outline` draws a rim around it. A recipe has more finishing steps under `edits`: pad, flip, shift, replace a color, and clean specks. [Finishing steps](docs/recipes.md#edits)
+
 ## Loops from a still
 
 <div align="center">

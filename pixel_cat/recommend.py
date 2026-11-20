@@ -10,7 +10,7 @@ import math
 import numpy as np
 
 from . import stills
-from .palettes import oklab
+from .palettes import oklab  # noqa: F401 - edits use it through this module too
 
 COLOUR_STEPS = (8, 12, 16, 24, 32, 48, 64)
 RING = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]     # (dy, dx)

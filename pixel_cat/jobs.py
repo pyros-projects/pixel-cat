@@ -6,7 +6,7 @@ from tempfile import NamedTemporaryFile
 
 import numpy as np
 
-from . import frames, loops, recommend, stills
+from . import edits, frames, loops, recommend, stills
 from .options import conversion, integer, keys
 from .palettes import PALETTES
 
@@ -14,7 +14,7 @@ FORMATS = {".png": "png", ".gif": "gif", ".mp4": "mp4", ".webm": "webm"}
 
 
 def execute(job, base):
-    keys(job, {"input", "convert", "media", "sheet", "loop", "export"}, "recipe")
+    keys(job, {"input", "convert", "media", "sheet", "edits", "loop", "export"}, "recipe")
     path = (Path(base) / job["input"]).resolve(strict=True)
     settings = conversion(job.get("convert", {}))
     media, sheet = job.get("media", {}), job.get("sheet")
@@ -91,6 +91,8 @@ def execute(job, base):
         if moving and settings["mode"] == "grid":
             summary["stabilized"] = settle(images)
         stills.finish(images, settings, stills.theme(settings, PALETTES), durations)
+    if job.get("edits"):
+        images = edits.apply(images, job["edits"])
     if loop is not None:
         images, durations = loops.animate(images[0], loop)
     height, width = images[0].shape[:2]

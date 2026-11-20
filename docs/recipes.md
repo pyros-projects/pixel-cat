@@ -53,6 +53,31 @@ Steadying applies in grid and recommended mode.
 
 Treats a still image as a sprite sheet: `columns` and `rows` (1 to 16 each) cut it into frames in reading order, `delay` is the frame duration in milliseconds (default 120).
 
+## `edits`
+
+Finishing steps on the converted art, applied in order to every frame.
+
+```json
+"edits": [
+  {"op": "cutout"},
+  {"op": "trim", "margin": 1},
+  {"op": "outline", "color": "#101018"}
+]
+```
+
+| Step | What it does | Settings |
+| --- | --- | --- |
+| `cutout` | makes the background transparent: everything that connects to the picture's edge through cells close to a corner color | `tolerance` (0 to 255, default 24), `color` to name the background, `fringe` (default true) also removes a thin rim tinted by the background |
+| `trim` | crops to the drawing; an animation is cropped to the box that holds every frame | `margin` in cells |
+| `outline` | draws a one-cell outline around everything opaque; the picture grows by one cell on each side | `color`, `corners` (also close diagonal gaps), `grow` |
+| `pad` | adds cells around the picture | `cells`: one number or `[left, top, right, bottom]`; `color` |
+| `flip` | mirrors | `axis`: `x` or `y` |
+| `shift` | moves the picture by whole cells and wraps around, for checking how a tile repeats | `x`, `y` |
+| `replace` | turns one color or a list of colors into another | `from`, `to`, `tolerance` |
+| `clean` | removes specks: small enclosed groups of cells join the color around them when the two look alike | `strength`: `gentle`, `balanced` or `strong` |
+
+A step with a wrong setting stops the job and names itself: `Edit 2 (outline): color is a colour written as #RRGGBB`. In a recipe with both `edits` and `loop`, the edits come first.
+
 ## `loop`
 
 Turns a still picture into a seamless loop. The picture is converted first, then the regions move.

@@ -55,6 +55,9 @@ with a nonzero exit.
 - The `<home>/README.md` section "Modes" explains what each mode and sampler
   does. `<home>/docs/recipes.md` is the reference for JSON recipes. Read it
   before you write one.
+- For a sprite, add `--cutout --trim --outline "#101018"`: transparent
+  background, tight crop, a rim. More finishing steps are in the recipe guide
+  under `edits`.
 - A still can become a loop (`--loop clouds,water`, or the `loop` key of a
   recipe). The guessed areas are rough. Look at the converted picture, then
   give each region its `area` as a box or a polygon in fractions of the

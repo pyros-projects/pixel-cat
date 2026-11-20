@@ -278,6 +278,63 @@ class Loops(Case):
             self.run_job(input=self.scene(), loop={"regions": [{"kind": "water", "area": [0, 0, 2, 1]}]}, export=["out.gif"])
 
 
+class Edits(Case):
+    def sprite(self):
+        """A red disc with a dark rim on a paper-coloured ground."""
+        y, x = np.mgrid[0:96, 0:128]
+        reach = np.hypot(x - 70, y - 50)
+        image = np.full((96, 128, 4), 255, dtype=np.uint8)
+        image[..., :3] = (236, 232, 220)
+        image[reach < 30, :3] = (30, 20, 40)
+        image[reach < 26, :3] = (220, 40, 50)
+        return self.save(image)
+
+    def edit(self, *steps, **convert):
+        return self.run_job(input=self.sprite(), convert={"mode": "grid", "grid": 64, "colors": 8} | convert, edits=list(steps))
+
+    def test_cutout_trim_and_outline_make_a_sprite(self):
+        result = self.edit({"op": "cutout"}, {"op": "trim"}, {"op": "outline", "color": "#ffffff"})
+        out = self.out()
+        self.assertEqual((result["width"], result["height"]), (out.shape[1], out.shape[0]))
+        self.assertEqual(out.shape[0], out.shape[1])                # a disc in a tight box, plus the outline
+        self.assertEqual(colours(out), {"#1e1428", "#dc2832", "#ffffff"})
+        self.assertTrue((out[0, 0] == 0).all() and out[out.shape[0] // 2, 0, 3] == 255)
+        solid = out[..., 3] == 255
+        self.assertTrue((out[..., :3][solid & ~np.roll(solid, 1, axis=1)] == 255).all())   # every left edge is outline
+
+    def test_trim_keeps_a_margin_and_pad_adds_cells(self):
+        self.edit({"op": "cutout"}, {"op": "trim", "margin": 2})
+        tight = self.out().shape
+        self.edit({"op": "cutout"}, {"op": "trim"}, {"op": "pad", "cells": [1, 2, 3, 4], "color": "#00ff00"})
+        padded = self.out()
+        self.assertEqual(padded.shape[:2], (tight[0] - 4 + 6, tight[1] - 4 + 4))
+        self.assertEqual(tuple(padded[0, 0]), (0, 255, 0, 255))
+
+    def test_replace_flip_and_shift(self):
+        self.edit()
+        plain = self.out()
+        self.edit({"op": "replace", "from": "#dc2832", "to": "#2040e0"})
+        self.assertEqual(colours(self.out()), {"#ece8dc", "#1e1428", "#2040e0"})
+        self.edit({"op": "flip"})
+        self.assertTrue((self.out() == plain[:, ::-1]).all())
+        self.edit({"op": "shift", "x": 5, "y": -3})
+        self.assertTrue((self.out() == np.roll(plain, (-3, 5), axis=(0, 1))).all())
+
+    def test_clean_removes_a_near_miss_speck_and_keeps_a_contrasting_one(self):
+        image = np.full((64, 64, 4), 255, dtype=np.uint8)
+        image[..., :3] = (80, 120, 200)
+        image[20, 20, :3] = (86, 126, 206)                          # almost the ground colour
+        image[40, 40, :3] = (250, 240, 120)                         # a star
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": "native", "colors": 8}, edits=[{"op": "clean"}])
+        self.assertEqual(colours(self.out()), {"#5078c8", "#faf078"})
+
+    def test_a_wrong_step_names_itself(self):
+        with self.assertRaisesRegex(ValueError, "Edit 2 .outline.: color"):
+            self.edit({"op": "cutout"}, {"op": "outline", "color": "red"})
+        with self.assertRaisesRegex(ValueError, "Edit 1: op is one of"):
+            self.edit({"op": "sharpen"})
+
+
 class CommandLine(Case):
     def cli(self, *args):
         return subprocess.run([sys.executable, "-m", "pixel_cat", *args], capture_output=True, text=True, cwd=self.folder, env={"PYTHONPATH": str(ROOT), "PATH": ""})

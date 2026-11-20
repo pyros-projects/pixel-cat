@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .edits import OPS
 from .jobs import execute
 from .loops import KINDS
 from .options import MODES, OPTIONS, SAMPLING
@@ -43,6 +44,9 @@ def parser():
     convert.add_argument("--frames", help="how many frames to take from an animation, or all")
     convert.add_argument("--speed", type=int, help="playback speed in percent")
     convert.add_argument("--stability", type=int, help="how much a still cell may flicker before it counts as motion (0 to 255)")
+    convert.add_argument("--cutout", action="store_true", help="make the background transparent")
+    convert.add_argument("--trim", action="store_true", help="crop to the drawing")
+    convert.add_argument("--outline", metavar="#RRGGBB", help="draw an outline around the drawing")
     convert.add_argument("--loop", help="animate a still: comma-separated kinds, e.g. clouds,water (areas are guessed)")
     convert.add_argument("--seconds", type=float, help="length of the loop")
     convert.add_argument("--sheet", help="split a sprite sheet into columns x rows, e.g. 4x2")
@@ -65,6 +69,11 @@ def convert_job(args):
         job["sheet"] = {"columns": columns, "rows": rows, "delay": args.delay or 120}
     elif args.delay is not None:
         raise ValueError("--delay needs --sheet")
+    steps = ([{"op": "cutout"}] if args.cutout else []) + ([{"op": "trim"}] if args.trim else [])
+    if args.outline:
+        steps.append({"op": "outline", "color": args.outline})
+    if steps:
+        job["edits"] = steps
     if args.loop:
         job["loop"] = {"regions": [{"kind": kind.strip()} for kind in args.loop.split(",")]}
         if args.seconds is not None:
@@ -87,8 +96,10 @@ def catalog():
         "inputs": ["png, jpg, webp and other stills", "gif", "video (needs FFmpeg)", "sprite sheet"],
         "outputs": ["png", "gif", "mp4", "webm"],
         "recipe": {"input": "path", "convert": "mode and its settings", "media": "frames, speed, stability",
-                   "sheet": "columns, rows, delay", "loop": "seconds, fps, seed, regions (kind, area, amount)",
+                   "sheet": "columns, rows, delay", "edits": "steps, each with an op",
+                   "loop": "seconds, fps, seed, regions (kind, area, amount)",
                    "export": "a path, or objects with path, scale, frame, format"},
+        "edits": list(OPS),
         "loop kinds": list(KINDS),
     }
 
