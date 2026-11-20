@@ -32,7 +32,11 @@ Always use `uv`. The README says what the tool promises; `docs/recipes.md` and `
 - **Tests build their own inputs** and check what a feature promises: sizes, colour limits, which cells change and
   which do not. No test depends on a file from outside the repository.
 - **Look before you show.** Open what you made. For anything that moves, put every frame on a sheet and look at
-  each one before it goes to a person; a loop that is fine at speed can hide a broken frame.
+  each one before it goes to a person; a loop that is fine at speed can hide a broken frame. In the studio, press
+  every new control with real pointer input, button down and up at its place on the screen. A click sent by
+  script reaches the control directly and passes where a hand's click was caught by the canvas beneath it.
+- **Try it at working size.** A project of 384 by 216 cells with 80 frames and jointed layers shows what a
+  16-cell test cannot: how long a change takes, and what a held drawing costs.
 - **A new kind of defect gets a mechanism, not a promise:** a check in the tool, an error that names the place, or
   a test.
 - **Plain English** in code, docs, issues, commits and pull requests. Say what a thing does; a reader should not
