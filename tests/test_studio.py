@@ -121,6 +121,30 @@ class Projects(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "width"):
             Project(2049, 4)
 
+    def shot(self, name, colour, **state):
+        """A project of one frame with one filled layer, shown, locked or faded as asked."""
+        p = Project(16, 12)
+        p.apply({"op": "draw", "color": colour, "rect": [0, 0, 16, 12]})
+        p.apply({"op": "set-layer", "layer": 0, "name": name, **state})
+        return p
+
+    def test_an_appended_shot_keeps_how_its_layers_show(self):
+        # a hidden, locked layer does not swallow a visible one of the same name
+        p = self.shot("Figure", "#c82828", visible=False, locked=True)
+        p.apply({"op": "append", "project": self.shot("Figure", "#2850dc").to_json()})
+        self.assertEqual([(l["name"], l["visible"], l["locked"]) for l in p.layers], [("Figure", False, True), ("Figure", True, False)])
+        self.assertEqual((int((p.composite(0)[..., 3] > 0).sum()), tuple(p.composite(1)[5, 5])), (0, (40, 80, 220, 255)))   # each shot shows as it did
+        # a layer that comes in locked or faded stays so, also after the file
+        p = self.shot("Room", "#c82828")
+        p.apply({"op": "append", "project": self.shot("Ink", "#101018", locked=True, opacity=0.5).to_json()})
+        p.save(self.folder / "joined.pixelcat")
+        again = Project.load(self.folder / "joined.pixelcat")
+        self.assertEqual([(l["name"], l["locked"], l["opacity"]) for l in again.layers], [("Room", False, 1.0), ("Ink", True, 0.5)])
+        # layers that show the same way still share one row
+        p = self.shot("Room", "#c82828", opacity=0.5)
+        p.apply({"op": "append", "project": self.shot("Room", "#2850dc", opacity=0.5).to_json()})
+        self.assertEqual((len(p.layers), len(p.frames)), (1, 2))
+
     def test_an_area_of_one_frame_can_be_held_in_the_others(self):
         p = self.project
         for frame in range(3):
@@ -423,6 +447,25 @@ class Joints(unittest.TestCase):
         light = lamp.shown(names.index("Light"), 4)
         ys, _ = np.nonzero(light[..., 3] > 0)
         self.assertGreater(int(ys.min()), 30)                       # at rest the light points up; posed, it falls on the desk
+
+    def test_appending_leaves_the_motion_that_is_there_alone(self):
+        path = Path(__file__).resolve().parents[1] / "examples" / "projects" / "lamp.pixelcat"
+        lamp = Project.load(path)                                   # its joints loop over eight frames, and the shade lags
+        before, timing = [lamp.composite(f) for f in range(8)], [f["duration"] for f in lamp.frames]
+        note = lamp.apply({"op": "append", "project": json.loads(path.read_text())})
+        self.assertIn("the motion of 3 parts here is now a key on every frame, so they play as before", note)
+        lamp.save(self.folder / "twice.pixelcat")
+        for project in (lamp, Project.load(self.folder / "twice.pixelcat")):
+            self.assertEqual([f["duration"] for f in project.frames], timing * 2)
+            for frame in range(8):                                  # the frames that were there, and the same ones again behind them
+                self.assertTrue((project.composite(frame) == before[frame]).all(), frame)
+                self.assertTrue((project.composite(8 + frame) == before[frame]).all(), frame)
+        still = Project(8, 8)                                       # a joint whose motion does not depend on the length stays as it is
+        still.apply({"op": "draw", "color": "#ff0000", "rect": [2, 2, 3, 1]})
+        still.apply({"op": "joint", "layer": 0, "pivot": [2.5, 2.5], "wrap": False})
+        still.apply({"op": "pose", "layer": 0, "frame": 0, "angle": 90})
+        self.assertNotIn("key on every frame", still.apply({"op": "append", "project": Project(8, 8).to_json()}))
+        self.assertEqual(still.layers[0]["joint"]["keys"], [{"angle": 90.0, "x": 0.0, "y": 0.0, "ease": "smooth"}, None])
 
     def test_turning_keeps_thin_lines_whole(self):
         from pixel_cat import joints

@@ -88,6 +88,26 @@ class Project:
                 held = layer["joint"]["keys"]
                 layer["joint"]["keys"] = [dict(held[f]) if f is not None and held[f] else None for f in order]
 
+    def _pin(self):
+        """Write the motion of joints that loop or sway out as a key on every frame. Such a motion depends on
+        the number of frames; written out, it plays the same when the timeline grows. Returns how many layers
+        were changed."""
+        count, memo, written = len(self.frames), {}, {}
+        for index, layer in enumerate(self.layers):
+            joint = layer.get("joint")
+            if not joint or not (joint.get("sway") or (joint.get("wrap", True) and (any(joint["keys"]) or joint.get("drag")))):
+                continue
+            parent = joints.parent_of(self.layers, index)
+            carried = parent is not None and index not in joints.chain(self.layers, parent)
+            written[index] = []
+            for frame in range(count):                                # its own turn: the whole turn less what the parent brings
+                turn = joints.world(self.layers, index, frame, count, memo)[1] - (joints.world(self.layers, parent, frame, count, memo)[1] if carried else 0.0)
+                _, x, y = joints.local(joint, frame, count)
+                written[index].append(joints.key({"angle": turn, "x": x, "y": y, "ease": "linear"}))
+        for index, held in written.items():
+            self.layers[index]["joint"].update(keys=held, wrap=False, sway=None, drag=None)
+        return len(written)
+
     @staticmethod
     def _tracks(layer):
         """The lists of a layer that hold one entry per frame."""
@@ -627,16 +647,18 @@ class Project:
                 other.apply({"op": "bake"})                           # its motion comes as plain frames
             if frames + len(other.frames) > LIMITS["frames"]:
                 raise ValueError("A project holds up to 256 frames")
+            pinned = self._pin()                                      # what is here plays on as it did
             self._order(list(range(frames)) + [None] * len(other.frames))
             for at, frame in enumerate(other.frames):
                 self.frames[frames + at]["duration"] = frame["duration"]
             taken, added = set(), 0
-            for layer in other.layers:
-                home = next((i for i, mine in enumerate(self.layers) if mine["name"] == layer["name"] and not mine.get("joint") and i not in taken), None)
+            alike = lambda mine, theirs: all(mine[name] == theirs[name] for name in ("name", "visible", "locked", "opacity"))   # noqa: E731
+            for layer in other.layers:                                # onto a layer that shows the same way, or onto a new one
+                home = next((i for i, mine in enumerate(self.layers) if alike(mine, layer) and not mine.get("joint") and i not in taken), None)
                 if home is None:
                     if len(self.layers) >= LIMITS["layers"]:
                         raise ValueError("A project holds up to 32 layers")
-                    self.layers.append(dict(self._layer(layer["name"]), visible=layer["visible"], opacity=layer["opacity"]))
+                    self.layers.append(dict(self._layer(layer["name"]), visible=layer["visible"], locked=layer["locked"], opacity=layer["opacity"]))
                     home, added = len(self.layers) - 1, added + 1
                 taken.add(home)
                 for at, cel in enumerate(layer["cels"]):
@@ -648,6 +670,8 @@ class Project:
             note = f"appended {len(other.frames)} frame{'s' if len(other.frames) != 1 else ''} from a project with {len(other.layers)} layer{'s' if len(other.layers) != 1 else ''}"
             if added:
                 note += f", {added} of them new here"
+            if pinned:
+                note += f"; the motion of {pinned} part{'s' if pinned != 1 else ''} here is now a key on every frame, so {'they play' if pinned != 1 else 'it plays'} as before"
             if (other.width, other.height) != (self.width, self.height):
                 note += f"; it is {other.width} by {other.height}, so its art sits at the top left"
             return note

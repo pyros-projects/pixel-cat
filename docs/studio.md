@@ -94,7 +94,7 @@ Frames and layers are counted from 0; layer 0 is the bottom one. An operation th
 | `part` | `layer`, an area (`rect`, `points` or `cells`), and optionally `name` and `pivot`: the drawn cells of the area move to a new layer above, on every frame, and that layer gets a joint. Without `pivot` it turns around the middle of the piece. A piece of a jointed layer hangs on that layer. |
 | `pose` | `layer`, `frame`, and any of `angle` (degrees, clockwise), `x`, `y`, `ease` (`smooth`, `linear`, `hold`, `anticipate`, `overshoot`): sets a key. `remove` takes the key away. |
 | `bake` | `layer` (with everything that hangs on it), or nothing for all joints: the motion becomes plain frames |
-| `append` | `project` (a project as JSON; `pixel-cat op` also takes `file`, a path): its frames follow the last one, its layers go onto layers of the same name or become new ones, its joints arrive baked |
+| `append` | `project` (a project as JSON; `pixel-cat op` also takes `file`, a path): its frames follow the last one, and its joints arrive baked. A layer goes onto a layer of the same name that is shown, locked and faded the same way, or becomes a new one, so each part of the timeline shows as it did. Parts of this project whose motion loops or sways get that motion written out as a key on every frame, so they play as before on the longer timeline. |
 | `place` | `frames` (PNG images as base64), `name`, `frame`, `x`, `y`, `durations`: converted art as a new layer |
 | `resize` | `width`, `height`, and `x`, `y` to shift the art |
 
