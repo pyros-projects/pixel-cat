@@ -1,8 +1,8 @@
 # Artwork for the three films
 
-Each film uses four background paintings and one transparent sprite. An image model made the source paintings from the prompts below. The PNGs beside each `story.json` are the finished `pixel-cat` conversions used by the renderer. You can render the three films from those PNGs without an image generator.
+Each film uses four background plates and one transparent sprite. An image model made the source paintings from the prompts below. The PNGs beside each `story.json` are the finished `pixel-cat` conversions used by the renderer. You can render the three films from those PNGs without an image generator.
 
-*Tide Bell* and *Emberwing* were painted shot by shot by an image model, with the first shot as the style guide for the rest. Their shots show no hands in close-up: the action is told through a rope, a bell, a lantern and a chrysalis. *Platform Zero* still uses one four-panel sheet.
+*Tide Bell* and *Emberwing* were painted shot by shot by an image model, with the first shot as the style guide for the rest. *Platform Zero* was painted as one sheet of four panels.
 
 ## Tide Bell
 
