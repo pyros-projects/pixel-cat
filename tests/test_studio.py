@@ -208,6 +208,17 @@ class Projects(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already is pixel art"):
             execute({"input": "out.pixelcat", "convert": {"mode": "grid"}, "export": ["x.png"]}, self.folder)
 
+    def test_a_loop_with_256_colours_and_no_gaps_exports_as_a_gif(self):
+        colours = np.array([(r * 36, g * 36, b * 85, 255) for r in range(8) for g in range(8) for b in range(4)], dtype=np.uint8)
+        frames = [colours[order].reshape(16, 16, 4) for order in (np.arange(256), np.arange(256)[::-1])]      # every cell another colour
+        Project.from_frames(frames, [80, 80]).save(self.folder / "full.pixelcat")
+        execute({"input": "full.pixelcat", "export": [{"path": "full.gif", "scale": 1}]}, self.folder)
+        with Image.open(self.folder / "full.gif") as gif:
+            self.assertEqual(gif.n_frames, 2)
+            for index, frame in enumerate(frames):
+                gif.seek(index)
+                self.assertTrue((np.array(gif.convert("RGBA")) == frame).all(), index)
+
 
 class Joints(unittest.TestCase):
     """An arm: the forearm turns around the elbow, the hand hangs on the forearm at the wrist."""

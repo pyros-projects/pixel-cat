@@ -111,8 +111,9 @@ def write_gif(images, durations, path, scale):
     flat = [0] * 768
     flat[:len(table) * 3] = [int(v) for v in table.reshape(-1)]
     frames = []
+    empty = len(table) if see_through else 0         # with no gaps every cell gets a colour, and the table may be full
     for image in images:
-        indexed = np.full(image.shape[:2], len(table), dtype=np.uint8)
+        indexed = np.full(image.shape[:2], empty, dtype=np.uint8)
         solid = image[..., 3] >= 128
         indexed[solid] = stills.nearest(image[..., :3][solid], table)
         frame = Image.fromarray(enlarge(indexed, scale), mode="P")
