@@ -666,13 +666,23 @@ class Project:
                 self.frames[frames + at]["duration"] = frame["duration"]
             alike = lambda mine, theirs: all(mine[name] == theirs[name] for name in ("name", "visible", "locked", "opacity"))   # noqa: E731
             # An incoming layer joins one of ours of the same name that shows the same way, but only one further
-            # up than the layer before it went: the shot keeps its order from back to front. A layer that finds
-            # none becomes a new one right above the layer before it.
-            homes, last = [], -1
-            for layer in other.layers:
-                at = next((i for i in range(last + 1, len(self.layers)) if alike(self.layers[i], layer) and not self.layers[i].get("joint")), None)
-                homes.append(None if at is None else self.layers[at])
-                last = last if at is None else at
+            # up than the layer before it went: the shot keeps its order from back to front. Of all the ways to
+            # pair the layers like that, the one that shares the most is taken, so that as few layers as possible
+            # are new. A layer that finds none becomes a new one right above the layer before it.
+            theirs, ours = len(other.layers), len(self.layers)
+            fits = [[alike(mine, layer) and not mine.get("joint") for mine in self.layers] for layer in other.layers]
+            most = [[0] * (ours + 1) for _ in range(theirs + 1)]      # most[i][j]: pairs possible from their layer i and our layer j upwards
+            for i in range(theirs - 1, -1, -1):
+                for j in range(ours - 1, -1, -1):
+                    most[i][j] = most[i + 1][j + 1] + 1 if fits[i][j] else max(most[i + 1][j], most[i][j + 1])
+            homes, i, j = [None] * theirs, 0, 0
+            while i < theirs and j < ours:
+                if fits[i][j]:
+                    homes[i], i, j = self.layers[j], i + 1, j + 1
+                elif most[i + 1][j] >= most[i][j + 1]:
+                    i += 1
+                else:
+                    j += 1
             added = sum(home is None for home in homes)
             if len(self.layers) + added > LIMITS["layers"]:
                 raise ValueError("A project holds up to 32 layers")

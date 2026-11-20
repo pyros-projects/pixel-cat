@@ -171,6 +171,19 @@ class Projects(unittest.TestCase):
         third.apply({"op": "append", "project": low.to_json()})
         self.assertEqual([l["name"] for l in third.layers], ["Night sky", "Wall", "Girl ducks", "Girl stands", "Rail"])
         self.assertTrue((third.composite(1) == low.composite(0)).all())
+        # the layers are paired so that as many as possible are shared: here 31 layers have room for just one more
+        full = Project(16, 12)
+        for at, name in enumerate(["Ground", "Figure", "Mist"] + [f"Detail {n}" for n in range(1, 29)]):
+            full.apply({"op": "set-layer", "layer": at, "name": name} if at == 0 else {"op": "add-layer", "name": name})
+        full.apply({"op": "draw", "layer": 0, "color": "#404040", "rect": [0, 0, 16, 12]})
+        other = Project(16, 12)                                     # the same three names, the mist at the back this time
+        for at, (name, colour, rect) in enumerate([("Mist", "#a0a0c0", [0, 0, 16, 12]), ("Ground", "#406040", [0, 6, 16, 6]), ("Figure", "#c82828", [6, 3, 4, 7])]):
+            other.apply({"op": "set-layer", "layer": 0, "name": name} if at == 0 else {"op": "add-layer", "name": name})
+            other.apply({"op": "draw", "layer": at, "color": colour, "rect": rect})
+        held = full.composite(0)
+        self.assertIn("1 of them new here", full.apply({"op": "append", "project": other.to_json()}))
+        self.assertEqual(([l["name"] for l in full.layers[:4]], len(full.layers)), (["Mist", "Ground", "Figure", "Mist"], 32))
+        self.assertTrue((full.composite(0) == held).all() and (full.composite(1) == other.composite(0)).all())
 
     def test_a_stroke_from_the_page_leaves_soft_cells_as_they_were(self):
         rng = np.random.default_rng(8)
