@@ -58,6 +58,7 @@ class Project:
         self.frames = [{"duration": 120}]
         self.layers = [self._layer("Layer 1")]
         self.palette = []
+        self.locked = False              # a locked palette: whatever is drawn takes the nearest palette colour
 
     # ------------------------------------------------------------ building
 
@@ -73,7 +74,15 @@ class Project:
         return self.blank() if found is None else found
 
     def put(self, layer, frame, image):
-        self.layers[layer]["cels"][frame] = image if image[..., 3].any() else None
+        self.layers[layer]["cels"][frame] = self.snap(image) if image[..., 3].any() else None
+
+    def snap(self, image):
+        """With a locked palette, every visible cell moves to its nearest palette colour."""
+        if not (self.locked and self.palette):
+            return image
+        image = image.copy()
+        stills.apply_palette(image, np.array([edits.rgb(c) for c in self.palette], dtype=np.int64), 1)
+        return image
 
     @classmethod
     def from_frames(cls, images, durations, name="Layer 1"):
@@ -95,13 +104,14 @@ class Project:
         other.frames = [dict(f) for f in self.frames]
         other.layers = [dict(layer, cels=list(layer["cels"])) for layer in self.layers]
         other.palette = list(self.palette)
+        other.locked = self.locked
         return other
 
     # ------------------------------------------------------------ files
 
     def to_json(self):
         return {"format": FORMAT, "version": 1, "width": self.width, "height": self.height, "palette": self.palette,
-                "frames": self.frames,
+                "locked": self.locked, "frames": self.frames,
                 "layers": [dict(layer, cels=[None if c is None else base64.b64encode(png_bytes(c)).decode() for c in layer["cels"]])
                            for layer in self.layers]}
 
@@ -114,6 +124,7 @@ class Project:
         if not 1 <= len(project.frames) <= LIMITS["frames"] or not 1 <= len(data["layers"]) <= LIMITS["layers"]:
             raise ValueError("A project has 1 to 256 frames and 1 to 32 layers")
         project.palette = [c for c in data.get("palette", []) if edits.rgb(c)]
+        project.locked = bool(data.get("locked", False))
         project.layers = []
         for layer in data["layers"]:
             if len(layer["cels"]) != len(project.frames):
@@ -155,7 +166,7 @@ class Project:
 
     def summary(self):
         return {"width": self.width, "height": self.height, "frames": len(self.frames),
-                "durations": [f["duration"] for f in self.frames],
+                "durations": [f["duration"] for f in self.frames], "palette": len(self.palette), "locked": self.locked,
                 "layers": [{"name": layer["name"], "visible": layer["visible"], "locked": layer["locked"],
                             "cels": [c is not None for c in layer["cels"]]} for layer in self.layers]}
 
@@ -165,7 +176,12 @@ class Project:
         return integer(op.get(name, 0), 0, count - 1, name)
 
     def _draw(self, op):
-        """Set cells: single points, a line, a rectangle (filled or outlined) or a flood fill."""
+        """Set cells: single points, a line, a rectangle (filled or outlined) or a flood fill. With `frames`
+        ("all" or a list) the same is drawn on each of those frames."""
+        if "frames" in op:
+            for frame in edits.targets(op, len(self.frames)):
+                self._draw({k: v for k, v in op.items() if k != "frames"} | {"frame": frame})
+            return f"drew on layer {op.get('layer', 0)}, {len(edits.targets(op, len(self.frames)))} frames"
         layer, frame = self._at(op, "layer", len(self.layers)), self._at(op, "frame", len(self.frames))
         if self.layers[layer]["locked"]:
             raise ValueError(f"Layer {layer} is locked")
@@ -212,10 +228,29 @@ class Project:
         kind, layers, frames = op["op"], len(self.layers), len(self.frames)
         if kind == "set-cel":
             layer, frame = self._at(op, "layer", layers), self._at(op, "frame", frames)
+            before = self.cel(layer, frame)
             self.put(layer, frame, from_png(base64.b64decode(op["png"]), (self.width, self.height)))
-            return f"drew on layer {layer}, frame {frame}"
+            spread = op.get("spread")
+            if not spread:
+                return f"drew on layer {layer}, frame {frame}"
+            # the cells this stroke changed are repeated on other frames; with `matching`, only where the other
+            # frame showed what this frame showed before the stroke, so that moving parts are left alone
+            keys(spread, {"frames", "matching"}, "spread")
+            after = self.cel(layer, frame)
+            changed = (before != after).any(axis=2)
+            reached = 0
+            for other in edits.targets(spread, frames):
+                if other == frame:
+                    continue
+                image = self.cel(layer, other).copy()
+                mask = changed & ((image == before).all(axis=2) if spread.get("matching", True) else True)
+                if mask.any():
+                    image[mask] = after[mask]
+                    self.put(layer, other, image)
+                    reached += 1
+            return f"drew on layer {layer}, frame {frame} and {reached} more frame{'s' if reached != 1 else ''}"
         if kind == "draw":
-            keys(op, {"op", "layer", "frame", "color", "points", "line", "rect", "outline", "fill"}, "draw")
+            keys(op, {"op", "layer", "frame", "frames", "color", "points", "line", "rect", "outline", "fill"}, "draw")
             return self._draw(op)
         if kind == "clear":
             layer, frame = self._at(op, "layer", layers), self._at(op, "frame", frames)
@@ -288,7 +323,17 @@ class Project:
                 self.frames[at]["duration"] = integer(op.get("duration", 120), 10, 60000, "duration")
             return "changed the timing"
         if kind == "palette":
-            self.palette = ["#%02x%02x%02x" % tuple(edits.rgb(c)) for c in op.get("colors", [])][:256]
+            keys(op, {"op", "colors", "lock"}, "palette")
+            if "colors" in op:
+                self.palette = ["#%02x%02x%02x" % tuple(edits.rgb(c)) for c in op["colors"]][:256]
+            if "lock" in op:
+                if op["lock"] and not self.palette:
+                    raise ValueError("There is no palette to lock. Add colours or take them from the art first.")
+                self.locked = bool(op["lock"])
+                if self.locked:                                   # what is there already moves onto the palette too
+                    for layer in self.layers:
+                        layer["cels"] = [None if c is None else self.snap(c) for c in layer["cels"]]
+                return "locked the palette" if self.locked else "unlocked the palette"
             return "changed the palette"
         if kind == "palette-from-art":
             found, counts, _ = stills.histogram([(self.composite(i), 1) for i in range(frames)])
@@ -344,7 +389,7 @@ class Project:
                 x0, y0, x1, y1 = max(0, x), max(0, y), min(self.width, x + w), min(self.height, y + h)
                 if x1 > x0 and y1 > y0:
                     canvas[y0:y1, x0:x1] = image[y0 - y:y1 - y, x0 - x:x1 - x]
-                new["cels"][at + index] = canvas if canvas[..., 3].any() else None
+                new["cels"][at + index] = self.snap(canvas) if canvas[..., 3].any() else None
                 if "durations" in op:
                     self.frames[at + index]["duration"] = integer(op["durations"][index], 10, 60000, "duration")
             if len(self.layers) == 1 and not any(c is not None for c in self.layers[0]["cels"]):

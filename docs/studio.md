@@ -12,10 +12,12 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 ## The page
 
 - **Canvas** in the middle. Scroll to zoom, hold Space and drag to pan, `0` fits the picture to the window.
-- **Tools** on the left: pencil `B`, eraser `E`, fill `G`, colour picker `I` (or hold Alt), line `L`, rectangle `R` (Shift fills it), select `M`, move `V`, pan `H`. Below them the brush size (`[` and `]`), mirror `X`, and fit.
+- **Tools** on the left: pencil `B`, eraser `E`, fill `G`, colour picker `I` (or hold Alt), line `L`, rectangle `R` (Shift fills it), select a box `M`, lasso `Q`, polygon `W`, move `V`, pan `H`. Below them the brush size, 1 to 16 cells (`[` and `]`), mirror `X`, and fit.
 - **Timeline** at the bottom: one column per frame, one row per layer, each cel as a small picture. A click picks the frame and the layer at once. Space plays, Left and Right step through the frames, Up and Down through the layers. Onion skin shows the neighbouring frames faintly.
 - **Colour, layers and chat** on the right. Layers can be hidden, locked, renamed (double-click), faded, reordered and merged. The palette comes from the art with one click.
-- **Selections:** drag with the select tool, move with the move tool, Enter sets the moved piece down, Delete clears, Ctrl+C and Ctrl+V copy and paste, Escape lets go.
+- **Selections:** a box, a lasso drawn around an area, or a polygon (click the corners, Enter closes, Backspace takes the last corner back). While something is selected, drawing stays inside it. Move with the move tool or the arrow keys (Shift: ten cells), Enter sets the moved piece down, Delete clears, Ctrl+C and Ctrl+V copy and paste, Ctrl+A selects everything, Ctrl+D or Escape lets go.
+- **Draw on all frames:** with this ticked, a stroke also changes the other frames, wherever they showed the same as this frame did before the stroke. A part that moves through is left alone.
+- **Locked palette:** "lock" next to the palette. From then on whatever is drawn, filled or brought in takes its nearest palette colour.
 - **Hold selection:** a spot that flickers next to motion you want to keep. Select it, go to the frame where it looks right, and press "hold selection". The studio first shows how many cells would change and marks them in every frame you step through; nothing happens until you press Apply.
 - **Check:** looks through all frames for flicker, stray fragments, holes and colours outside the palette, marks them on the canvas and lists the areas where they gather. "select" turns an area into the selection, ready for "hold selection" or a fix by hand. The list updates after every change.
 - **Import:** drop a picture, a GIF or a video on the canvas. It is converted first: to fit the canvas, the way pixel-cat recommends, or not at all. It lands on a new layer, after the last frame, or in place of the project.
@@ -50,7 +52,7 @@ Frames and layers are counted from 0; layer 0 is the bottom one. An operation th
 
 | Operation | Settings |
 | --- | --- |
-| `draw` | `layer`, `frame`, `color` (`"#rrggbb"`, or `null` to erase), and any of `points` `[[x, y], ...]`, `line` `[x0, y0, x1, y1]`, `rect` `[x, y, width, height]` (with `outline: true` only its border), `fill` `[x, y]` |
+| `draw` | `layer`, `frame` or `frames` (`"all"` or a list), `color` (`"#rrggbb"`, or `null` to erase), and any of `points` `[[x, y], ...]`, `line` `[x0, y0, x1, y1]`, `rect` `[x, y, width, height]` (with `outline: true` only its border), `fill` `[x, y]` |
 | `clear` | `layer`, `frame` |
 | `add-layer` | `name`, `at` |
 | `remove-layer`, `merge-down` | `layer` |
@@ -60,7 +62,7 @@ Frames and layers are counted from 0; layer 0 is the bottom one. An operation th
 | `remove-frame` | `frame` |
 | `move-frame` | `frame`, `to` |
 | `set-frame` | `frame` (a number or `"all"`), `duration` in milliseconds |
-| `palette` | `colors` |
+| `palette` | `colors`, and `lock` (`true` or `false`): with a locked palette every colour that is drawn moves to its nearest palette colour |
 | `palette-from-art` | |
 | `edits` | `layer`, `frames` (`"all"` or a list), `steps`: the [finishing steps](recipes.md#edits) that keep the size |
 | `hold` | `layer`, `from`, `frames`, and `rect`, `points` or `cells`: an area of one frame, copied into the others, so that it stands still |

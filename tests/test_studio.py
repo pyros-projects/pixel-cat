@@ -90,6 +90,38 @@ class Projects(unittest.TestCase):
         p.apply({"op": "hold", "from": 0, "frames": [2], "cells": [[10, 10], [11, 10]]})
         self.assertEqual((tuple(p.composite(2)[10, 10]), tuple(p.composite(1)[10, 10])), ((255, 0, 0, 255), (0, 255, 0, 255)))
 
+    def test_a_locked_palette_takes_every_colour_that_is_drawn(self):
+        p = self.project
+        p.apply({"op": "draw", "color": "#f0e0d0", "rect": [0, 0, 4, 4]})
+        with self.assertRaisesRegex(ValueError, "no palette to lock"):
+            p.apply({"op": "palette", "lock": True})
+        self.assertEqual(p.apply({"op": "palette", "colors": ["#000000", "#ffffff", "#ff0000"], "lock": True}), "locked the palette")
+        self.assertEqual(tuple(p.composite(0)[1, 1]), (255, 255, 255, 255))               # what was there moved onto the palette
+        p.apply({"op": "draw", "color": "#e02010", "points": [[8, 8]]})
+        self.assertEqual(tuple(p.composite(0)[8, 8]), (255, 0, 0, 255))
+        p.save(self.folder / "locked.pixelcat")
+        self.assertTrue(Project.load(self.folder / "locked.pixelcat").locked)
+        p.apply({"op": "palette", "lock": False})
+        p.apply({"op": "draw", "color": "#e02010", "points": [[9, 9]]})
+        self.assertEqual(tuple(p.composite(0)[9, 9]), (224, 32, 16, 255))
+
+    def test_one_stroke_can_reach_every_frame_and_spares_what_moves(self):
+        p = self.project
+        for frame in range(3):
+            if frame:
+                p.apply({"op": "add-frame"})
+            p.apply({"op": "draw", "frame": frame, "color": "#0000ff", "rect": [0, 0, 16, 12]})
+        p.apply({"op": "draw", "frame": 2, "color": "#ffff00", "rect": [4, 4, 2, 2]})      # something that is only in frame 2
+        stroke = p.cel(0, 0).copy()
+        stroke[4, 3:7] = (255, 0, 0, 255)                                                 # a red line across four cells
+        note = p.apply({"op": "set-cel", "layer": 0, "frame": 0, "png": base64.b64encode(png_bytes(stroke)).decode(), "spread": {"frames": "all"}})
+        self.assertEqual(note, "drew on layer 0, frame 0 and 2 more frames")
+        self.assertEqual([tuple(p.composite(f)[4, 3]) for f in range(3)], [(255, 0, 0, 255)] * 3)
+        self.assertEqual(tuple(p.composite(2)[4, 4]), (255, 255, 0, 255))                 # the yellow part was not drawn over
+        self.assertEqual(tuple(p.composite(1)[4, 4]), (255, 0, 0, 255))
+        p.apply({"op": "draw", "frames": "all", "color": "#00ff00", "points": [[15, 11]]})
+        self.assertEqual([tuple(p.composite(f)[11, 15]) for f in range(3)], [(0, 255, 0, 255)] * 3)
+
     def test_a_project_survives_its_file_and_reads_like_any_json(self):
         p = self.project
         p.apply({"op": "draw", "color": "#123456", "rect": [1, 1, 3, 3]})

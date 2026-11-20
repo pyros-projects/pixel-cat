@@ -129,3 +129,5 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .findings .area { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 3px 0; border-top: 1px solid var(--line); }
 .findings .area small { color: var(--quiet); display: block; }
 .findings .area button { padding: 1px 8px; }
+button.quiet.active { color: var(--ember); border-color: var(--ember-deep); }
+.current { flex-wrap: wrap; }

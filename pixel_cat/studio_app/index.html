@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pixel-cat studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect width='8' height='8' rx='2' fill='%23f2a65a'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -46,7 +47,8 @@
     <h2>Colour</h2>
     <div class="current"><input type="color" id="colour" value="#f2a65a" title="Current colour"><code id="hex">#f2a65a</code>
       <button id="addColour" class="quiet" title="Add this colour to the palette">+ palette</button>
-      <button id="fromArt" class="quiet" title="Take the palette from the art">from art</button></div>
+      <button id="fromArt" class="quiet" title="Take the palette from the art">from art</button>
+      <button id="lock" class="quiet">lock</button></div>
     <div id="palette" class="palette"></div>
   </section>
   <section class="layers">
@@ -69,6 +71,7 @@
     <button id="next" title="Next frame (Right)">&#9654;</button><button id="lastFrame" title="Last frame">&#9197;</button>
     <label class="check"><input type="checkbox" id="onion"> onion skin</label>
     <label class="check"><input type="checkbox" id="grid" checked> grid</label>
+    <label class="check" title="A stroke also changes the other frames, wherever they showed the same as this frame did before the stroke. What moves is left alone."><input type="checkbox" id="spread"> draw on all frames</label>
     <span class="gap"></span>
     <label>frame <b id="frameNo"></b> lasts <input id="duration" type="number" min="10" max="60000" step="10"> ms</label>
     <button id="durationAll" class="quiet" title="Give every frame this duration">all</button>
