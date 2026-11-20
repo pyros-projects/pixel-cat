@@ -103,6 +103,24 @@ class Page(unittest.TestCase):
         self.assertTrue((now[2:6, 12:16] == (42, 36, 32, 128)).all())               # where the other swatch was: this one's colour, two steps off
         self.assertTrue((now[2:6, 22:26] == (40, 36, 32, 128)).all() and not now[2:6, 2:6, 3].any())
 
+    def test_the_layer_in_hand_stays_in_hand_when_the_list_shifts(self):
+        self.room.change({"op": "add-layer", "name": "Rail"}, "you")
+        self.browser.until("window.studio.doc.layers.length === 2 && window.studio.pending === 0 ? 1 : 0")
+        self.browser.press(*self.spot("#layerList .layer"))                          # the top row: the rail
+        self.browser.until("window.studio.doc.layers[window.studio.layer].name === 'Rail' ? 1 : 0")
+        self.room.change({"op": "add-layer", "name": "Came in below", "at": 0}, "agent")   # as an appended shot does
+        self.browser.until("window.studio.doc.layers.length === 3 && window.studio.pending === 0 ? 1 : 0")
+        self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Rail")
+        self.browser.press(*self.cell(5, 5))                                         # so the next stroke goes where it was meant to go
+        self.browser.until("window.studio.meta.undo === 3 ? 1 : 0")
+        project = self.saved()
+        self.assertEqual([(layer["name"], layer["cels"][0] is not None and bool(layer["cels"][0][5, 5, 3])) for layer in project.layers],
+                         [("Came in below", False), ("Scene", True), ("Rail", True)])
+        self.assertTrue((project.cel(1, 0) == self.scene).all())                     # the scene below is untouched
+        self.browser.press(*self.spot("#downLayer"))                                 # moving it keeps it in hand as well
+        self.browser.until("window.studio.doc.layers[1].name === 'Rail' && window.studio.pending === 0 ? 1 : 0")
+        self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Rail")
+
     def test_a_panel_takes_its_own_presses(self):
         self.browser.press(*self.spot("#tidy"))
         self.browser.until("!document.getElementById('cleanup').hidden ? 1 : 0")

@@ -40,7 +40,9 @@ async function decode(data) {
 }
 async function load(flash) {
   const state = await api("/api/state");
+  const held = S.doc && S.doc.layers[S.layer] ? S.doc.layers[S.layer].id : null;   // the layer in hand stays in hand, wherever a change puts it in the list
   S.doc = state.doc; S.meta = state.meta; S.known = Math.max(S.known, state.meta.rev);
+  const again = S.doc.layers.findIndex(layer => layer.id === held); if (again >= 0) S.layer = again;
   const pictures = await Promise.all(state.doc.pictures.map(decode));   // each picture is opened once; every cel gets a canvas of its own, because drawing changes it
   const own = n => { const c = blank(); c.getContext("2d").drawImage(pictures[n], 0, 0); return c; };
   S.cels = state.doc.layers.map(layer => layer.cels.map(c => c == null ? null : own(c)));
@@ -897,7 +899,7 @@ $("paletteAdd").onclick = () => { if (!draft.includes(S.colour)) draft.push(S.co
 $("paletteSort").onclick = () => { draft.sort((a, b) => brightness(a) - brightness(b)); swatches(); };
 $("paletteDialog").addEventListener("close", () => { if ($("paletteDialog").returnValue === "go") op({ op: "palette", colors: draft }); });
 $("named").onchange = () => { const name = $("named").value; $("named").value = ""; if (name) op({ op: "palette", name }); };
-$("addLayer").onclick = async () => { const done = await op({ op: "add-layer", at: S.layer + 1 }); if (done) go(S.frame, S.layer + 1); };
+$("addLayer").onclick = async () => { const at = S.layer; if (await op({ op: "add-layer", at: at + 1 })) go(S.frame, at + 1); };
 $("delLayer").onclick = () => op({ op: "remove-layer", layer: S.layer });
 $("partLayer").onclick = event => {         // the selection becomes a part of its own: first the choice what happens to its place
   event.stopPropagation();
@@ -911,9 +913,9 @@ $("partMenu").onclick = async event => {     // then the next click on the pictu
   if (!await op({ op: "part", layer: from, ...where, ...(fill === "1" ? { fill: true } : {}) })) return;
   S.sel = null; go(S.frame, from + 1); setTool("pose"); S.pivoting = true; jointForm(); toast("Click where the part turns");
 };
-$("mergeLayer").onclick = async () => { const done = await op({ op: "merge-down", layer: S.layer }); if (done) go(S.frame, S.layer - 1); };
-$("upLayer").onclick = async () => { if (S.layer < S.doc.layers.length - 1 && await op({ op: "move-layer", layer: S.layer, to: S.layer + 1 })) go(S.frame, S.layer + 1); };
-$("downLayer").onclick = async () => { if (S.layer > 0 && await op({ op: "move-layer", layer: S.layer, to: S.layer - 1 })) go(S.frame, S.layer - 1); };
+$("mergeLayer").onclick = async () => { const at = S.layer; if (await op({ op: "merge-down", layer: at })) go(S.frame, at - 1); };
+$("upLayer").onclick = async () => { const at = S.layer; if (at < S.doc.layers.length - 1 && await op({ op: "move-layer", layer: at, to: at + 1 })) go(S.frame, at + 1); };
+$("downLayer").onclick = async () => { const at = S.layer; if (at > 0 && await op({ op: "move-layer", layer: at, to: at - 1 })) go(S.frame, at - 1); };
 $("addFrame").onclick = async () => { S.range = null; if (await op({ op: "add-frame", at: S.frame + 1 })) go(S.frame + 1, S.layer); };
 $("copyFrame").onclick = async () => {      // one frame, or the picked range, copied right behind itself
   const picked = pickedFrames();
