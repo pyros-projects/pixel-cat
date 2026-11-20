@@ -185,6 +185,36 @@ class Projects(unittest.TestCase):
         self.assertEqual(([l["name"] for l in full.layers[:4]], len(full.layers)), (["Mist", "Ground", "Figure", "Mist"], 32))
         self.assertTrue((full.composite(0) == held).all() and (full.composite(1) == other.composite(0)).all())
 
+    def test_a_piece_moves_without_losing_anything(self):
+        rng = np.random.default_rng(5)
+        soft = np.zeros((12, 16, 4), dtype=np.uint8)
+        soft[2:6, 2:8, :3] = rng.integers(0, 256, (4, 6, 3))        # a piece one can see through, every cell another colour and strength
+        soft[2:6, 2:8, 3] = rng.integers(1, 255, (4, 6))
+        soft[8:10, 2:14] = (10, 200, 10, 255)                       # and a solid bar below it
+        p = Project.from_frames([soft, soft], [100, 100])
+        piece = {"op": "move", "layer": 0, "frame": 0, "rect": [2, 2, 6, 4]}
+        self.assertEqual(p.apply({**piece, "x": 7, "y": 1}), "moved 24 cells of layer Layer 1 by 7, 1")
+        now = p.cel(0, 0)
+        self.assertTrue((now[3:7, 9:15] == soft[2:6, 2:8]).all() and not now[2:6, 2:8, 3].any())    # every cell as it was, and gone from its place
+        self.assertTrue((now[8:10] == soft[8:10]).all() and (p.cel(0, 1) == soft).all())            # nothing else moved, on no frame
+        p.apply({"op": "move", "layer": 0, "frame": 0, "rect": [9, 3, 6, 4], "x": -7, "y": -1})
+        self.assertTrue((p.cel(0, 0) == soft).all())                                                # there and back: the picture it was
+        # set down on the bar, a cell one can see through mixes with what is under it; on empty ground it stays as it is
+        p.apply({**piece, "y": 6})
+        now, came = p.cel(0, 0), soft[2, 3].astype(float)
+        share = came[3] / 255
+        self.assertEqual(tuple(now[8, 3]), tuple(int(v) for v in np.rint(np.append(came[:3] * share + np.array([10, 200, 10]) * (1 - share), 255))))
+        self.assertTrue((now[10:12, 2:8] == soft[4:6, 2:8]).all())
+        # the same piece on every frame at once, and off the edge of the picture
+        q = Project.from_frames([soft, soft], [100, 100])
+        self.assertEqual(q.apply({**piece, "frames": "all", "x": 9}), "moved 48 cells of layer Layer 1 by 9, 0; 8 of them left the picture")   # one column of four cells, on each frame
+        self.assertTrue(all((q.cel(0, f)[2:6, 11:16] == soft[2:6, 2:7]).all() and not q.cel(0, f)[2:6, 2:8, 3].any() for f in range(2)))
+        with self.assertRaisesRegex(ValueError, "nothing drawn to move"):
+            q.apply({"op": "move", "layer": 0, "frame": 0, "rect": [0, 0, 2, 2], "x": 1})
+        q.apply({"op": "set-layer", "layer": 0, "locked": True})
+        with self.assertRaisesRegex(ValueError, "locked"):
+            q.apply({**piece, "rect": [11, 2, 5, 4], "x": -1})
+
     def test_a_stroke_from_the_page_leaves_soft_cells_as_they_were(self):
         rng = np.random.default_rng(8)
         soft = np.zeros((12, 16, 4), dtype=np.uint8)

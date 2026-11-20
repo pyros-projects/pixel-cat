@@ -94,11 +94,19 @@ class Page(unittest.TestCase):
         now = self.saved().cel(1, 0)
         self.assertEqual({(int(x), int(y)) for y, x in np.argwhere((now != swatches).any(axis=2))}, {(20, 20)})
 
-    def test_a_moved_piece_arrives_with_its_own_colour(self):
+    def test_a_moved_piece_arrives_exactly_as_it_was(self):
         swatches = self.soft()
         self.browser.key("v")
-        self.browser.drag(self.cell(3, 3), self.cell(13, 3))                        # the whole layer, ten cells to the right
-        self.browser.until("window.studio.meta.undo === 2 ? 1 : 0")
+        self.browser.drag(self.cell(3, 3), self.cell(3, 8))                         # the whole layer, five cells down
+        self.browser.until("window.studio.meta.undo === 2 && window.studio.pending === 0 ? 1 : 0")
+        down = np.zeros_like(swatches)
+        down[5:] = swatches[:-5]
+        self.assertTrue((self.saved().cel(1, 0) == down).all())                     # every cell holds what it held, the soft ones too
+        self.browser.drag(self.cell(3, 8), self.cell(3, 3))                         # and back up
+        self.browser.until("window.studio.meta.undo === 3 && window.studio.pending === 0 ? 1 : 0")
+        self.assertTrue((self.saved().cel(1, 0) == swatches).all())                 # there and back: the picture it was
+        self.browser.drag(self.cell(3, 3), self.cell(13, 3))                        # ten cells to the right
+        self.browser.until("window.studio.meta.undo === 4 && window.studio.pending === 0 ? 1 : 0")
         now = self.saved().cel(1, 0)
         self.assertTrue((now[2:6, 12:16] == (42, 36, 32, 128)).all())               # where the other swatch was: this one's colour, two steps off
         self.assertTrue((now[2:6, 22:26] == (40, 36, 32, 128)).all() and not now[2:6, 2:6, 3].any())

@@ -397,13 +397,29 @@ function cut(source, area, remove) {         // the selected cells as a small ca
 function lift() {
   if (S.float) return;
   const source = cel(true), area = S.sel || { x: 0, y: 0, w: S.doc.width, h: S.doc.height };
-  S.float = { canvas: cut(source, area, true), x: area.x, y: area.y, whole: !S.sel, mask: area.mask };
+  S.float = { canvas: cut(source, area, true), x: area.x, y: area.y, whole: !S.sel, mask: area.mask, from: { layer: S.layer, frame: S.frame, x: area.x, y: area.y, area: S.sel } };
 }
 function drop() {
   if (!S.float) return;
-  cel(true).getContext("2d").drawImage(S.float.canvas, S.float.x, S.float.y);
-  if (!S.float.whole) S.sel = { x: S.float.x, y: S.float.y, w: S.float.canvas.width, h: S.float.canvas.height, mask: S.float.mask };
-  S.float = null; draw(); commit();
+  const piece = S.float, from = piece.from;
+  cel(true).getContext("2d").drawImage(piece.canvas, piece.x, piece.y);
+  if (!piece.whole) S.sel = { x: piece.x, y: piece.y, w: piece.canvas.width, h: piece.canvas.height, mask: piece.mask };
+  S.float = null; draw();
+  const by = from && from.layer === S.layer && from.frame === S.frame ? [piece.x - from.x, piece.y - from.y] : null;
+  if (!by || (!by[0] && !by[1])) return commit();      // pasted in from elsewhere, or set down where it was
+  setDown(from.area, by, piece.canvas);
+}
+async function setDown(area, [x, y], canvas) {   // a piece lifted from this cel comes down somewhere else: the server moves the cells it holds,
+  const drawn = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;   // so they arrive exactly as they were, soft ones too
+  let any = false; for (let k = 3; k < drawn.length && !any; k += 4) any = drawn[k] > 0;
+  if (!any) return;                           // an empty piece moves nothing
+  const where = !area ? {} : area.mask ? { cells: cellsOf(area) } : { rect: [area.x, area.y, area.w, area.h] };
+  const everywhere = $("spread").checked && S.doc.frames.length > 1;
+  S.pending++;
+  try {
+    const done = await send("/api/op", { op: { op: "move", layer: S.layer, frame: S.frame, x, y, ...where, ...(everywhere ? { frames: pickedFrames() || "all" } : {}) } });
+    S.known = Math.max(S.known, done.rev); await load();
+  } catch (error) { fail(error); await load(); } finally { S.pending--; }
 }
 function usable() {
   const layer = S.doc.layers[S.layer];
@@ -688,11 +704,12 @@ function play() {
 // ---------------------------------------------------------------- proposals: look before a change is made
 // A proposal shows which cells a change would touch, frame by frame, before anything is sent.
 function pixels(canvas) { return canvas ? canvas.getContext("2d").getImageData(0, 0, S.doc.width, S.doc.height).data : null; }
-function selectedCells() {                  // the cells of the selection, as [x, y] pairs
-  const out = []; if (!S.sel) return out;
-  for (let y = S.sel.y; y < S.sel.y + S.sel.h; y++) for (let x = S.sel.x; x < S.sel.x + S.sel.w; x++) if (!S.sel.mask || S.sel.mask[(y - S.sel.y) * S.sel.w + x - S.sel.x]) out.push([x, y]);
+function cellsOf(area) {                    // the cells of a selection, as [x, y] pairs
+  const out = []; if (!area) return out;
+  for (let y = area.y; y < area.y + area.h; y++) for (let x = area.x; x < area.x + area.w; x++) if (!area.mask || area.mask[(y - area.y) * area.w + x - area.x]) out.push([x, y]);
   return out;
 }
+function selectedCells() { return cellsOf(S.sel); }
 function propose(text, marks, apply) {       // marks: per frame, the cells that would change
   S.proposal = { marks, apply };
   const total = marks.reduce((n, cells) => n + cells.length, 0), frames = marks.filter(cells => cells.length).length;

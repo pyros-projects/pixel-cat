@@ -493,6 +493,39 @@ class Project:
             for frame, image in zip(targets, done):
                 self.put(layer, frame, image)
             return f"applied {len(steps)} step{'s' if len(steps) != 1 else ''} to layer {layer}"
+        if kind == "move":
+            # A piece of a cel, set down somewhere else. The cells are the ones the project holds, so they arrive
+            # exactly as they were, also those one can see through. With `frames` the same piece moves on each.
+            keys(op, {"op", "layer", "frame", "frames", "x", "y", "rect", "points", "cells"}, "move")
+            layer = self._at(op, "layer", layers)
+            if self.layers[layer]["locked"]:
+                raise ValueError(f"Layer {layer} is locked")
+            dx, dy = (integer(op.get(name, 0), -LIMITS["side"], LIMITS["side"], name) for name in ("x", "y"))
+            where = edits.area(op, self.width, self.height)
+            moved = lost = 0
+            for frame in edits.targets(op, frames) if "frames" in op else [self._at(op, "frame", frames)]:
+                image = self.cel(layer, frame)
+                piece = where & (image[..., 3] > 0)
+                if not piece.any():
+                    continue
+                out = image.copy()
+                out[piece] = 0
+                ys, xs = np.nonzero(piece)
+                ty, tx = ys + dy, xs + dx
+                stays = (ty >= 0) & (ty < self.height) & (tx >= 0) & (tx < self.width)
+                came, under = image[ys[stays], xs[stays]], out[ty[stays], tx[stays]]
+                # onto an empty cell, and for a solid cell, the piece arrives as it is; a cell one can see through
+                # that lands on art is mixed with it, the way layers are
+                a, b = came[:, 3:4] / 255, under[:, 3:4] / 255
+                cover = a + b * (1 - a)
+                mixed = np.concatenate([(came[:, :3] * a + under[:, :3] * b * (1 - a)) / np.maximum(cover, 1e-9), cover * 255], axis=1)
+                plain = (under[:, 3] == 0) | (came[:, 3] == 255)
+                out[ty[stays], tx[stays]] = np.where(plain[:, None], came, np.rint(mixed).astype(np.uint8))
+                self.put(layer, frame, out)
+                moved, lost = moved + len(ys), lost + int((~stays).sum())
+            if not moved:
+                raise ValueError("There is nothing drawn to move there")
+            return f"moved {moved} cells of layer {self.layers[layer]['name']} by {dx}, {dy}" + (f"; {lost} of them left the picture" if lost else "")
         if kind == "hold":
             # an area of one frame, copied into the others on the same layer: the area stands still
             keys(op, {"op", "layer", "from", "frames", "rect", "points", "cells", "outside"}, "hold")
@@ -761,5 +794,5 @@ class Project:
 
 
 OPERATIONS = ["draw", "clear", "set-cel", "add-layer", "remove-layer", "move-layer", "set-layer", "merge-down", "add-frame",
-              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "joint", "part", "pose", "bake",
+              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "move", "hold", "joint", "part", "pose", "bake",
               "append", "place", "resize"]

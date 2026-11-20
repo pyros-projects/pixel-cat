@@ -200,7 +200,7 @@ class Browser:
 
     def key(self, name):
         """One key, down and up: a letter, or Enter or Escape."""
-        key, text, number = KEYS.get(name, (name, name, ord(name.upper())))
+        key, text, number = KEYS[name] if name in KEYS else (name, name, ord(name.upper()))
         code = name if name in KEYS else "Key" + name.upper()
         self.ask("Input.dispatchKeyEvent", type="keyDown", key=key, code=code, text=text, windowsVirtualKeyCode=number)
         self.ask("Input.dispatchKeyEvent", type="keyUp", key=key, code=code, windowsVirtualKeyCode=number)
