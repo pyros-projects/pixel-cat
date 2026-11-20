@@ -596,8 +596,8 @@ class Project:
             ys, xs = np.nonzero(reach)
             middle = [(int(xs.min()) + int(xs.max()) + 1) / 2, (int(ys.min()) + int(ys.max()) + 1) / 2]
             pivot = joints.point(op["pivot"], self.width, self.height) if "pivot" in op else middle
-            new = self._layer(str(op.get("name") or f"{source['name']} part")[:60])
-            new["cels"] = [None if cel is None else split[id(cel)][1] for cel in source["cels"]]
+            new = dict(self._layer(str(op.get("name") or f"{source['name']} part")[:60]), visible=source["visible"], opacity=source["opacity"])
+            new["cels"] = [None if cel is None else split[id(cel)][1] for cel in source["cels"]]   # shown and faded like its layer: nothing looks different
             source["cels"] = [None if cel is None else split[id(cel)][0] for cel in source["cels"]]
             # a piece of a jointed layer hangs on it, so it still goes where the layer goes
             new["joint"] = {"pivot": pivot, "parent": source["id"] if source.get("joint") else None, "wrap": True, "drag": None,

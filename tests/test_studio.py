@@ -423,6 +423,16 @@ class Joints(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, why):
                 p.apply({"op": "part", "layer": 0, **bad})
         self.assertEqual(len(p.layers), 3)
+        # a part of a faded or hidden layer shows the way its layer does, so nothing looks different
+        faded = Project(40, 40)
+        faded.apply({"op": "draw", "color": "#c82828", "rect": [10, 10, 20, 8]})
+        faded.apply({"op": "set-layer", "layer": 0, "opacity": 0.5})
+        flat = faded.composite(0)
+        faded.apply({"op": "part", "layer": 0, "rect": [20, 10, 10, 8]})
+        self.assertEqual(([l["opacity"] for l in faded.layers], bool((faded.composite(0) == flat).all())), ([0.5, 0.5], True))
+        faded.apply({"op": "set-layer", "layer": 0, "visible": False})
+        faded.apply({"op": "part", "layer": 0, "rect": [10, 10, 4, 8]})
+        self.assertEqual([l["visible"] for l in faded.layers], [False, False, True])
 
     def test_baking_turns_the_motion_into_plain_frames(self):
         p = self.arm()
