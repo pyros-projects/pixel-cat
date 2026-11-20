@@ -2,7 +2,7 @@
 
 Each film uses one four-panel background sheet and one transparent sprite. ImageGen made the source paintings from the prompts below. The PNGs beside each `story.json` are the finished `pixel-cat` conversions used by the renderer. You can render the three films from those PNGs without an image generator.
 
-Three panels were painted a second time, one by one, because the hands in them were not drawn right: the first panel of *Tide Bell* and the first two of *Emberwing*. The image model got the old panel as a layout guide, a neighbouring panel for the style, and a prompt that describes the hand finger by finger. Because the layout stayed, the scene files needed almost no changes: only the outline of the chrysalis in *Emberwing*'s first shot was traced again. The prompts are under each film.
+Three panels were painted a second time, one by one, because the hands in them were not drawn right: the first panel of *Tide Bell* and the first two of *Emberwing*. The image model got the panel as a layout guide, a neighbouring panel for the style, and a prompt that puts the hand in a pose where the digits can be counted: a thumb along the rope above four stacked fingers, an open palm with the thumb set apart. Several candidates were painted for each and the fingers counted before one was chosen. Because the layout stayed, the scene files needed almost no changes: only the outline of the chrysalis in *Emberwing*'s first shot was traced again. The prompts are under each film.
 
 ## Tide Bell
 
@@ -16,13 +16,14 @@ An original single sprite on a fully transparent background: a mysterious lumino
 
 ### First panel, painted again
 
-Paint a new version of the first image: the same shot, the same composition, camera angle, colours and lighting. The second image shows another shot of the same film; match its drawing style exactly.
+Repaint the first image. Keep its composition, camera angle, colours, lighting, rope, brass ring, cuff, background ruins and drawing style exactly. Change only the hand, which currently shows too few fingers.
 
-The shot: underwater, a macro view of an antique salvage diver's hand in a heavy brass-plated diving glove gripping a thick vertical braided bell rope under a basalt arch. The rope runs straight from the top edge to the bottom edge, a little right of the center. A small brass rope ring sits on the rope in the upper half. The forearm with its riveted brass cuff comes in from the lower left corner.
+The diver's right hand in the heavy brass-plated diving glove grips the thick vertical rope the way a hand holds a pole, and we see it from the thumb side, so that all five digits are visible and can be counted:
+- The THUMB lies along the rope on the side facing us and points straight up, its armoured tip just below the brass ring.
+- Below the thumb, the FOUR FINGERS wrap around the rope from the left. Their four armoured fingertips come around the rope and sit one above the other on the right side of the rope, like four rungs: index finger at the top, then middle finger, ring finger and little finger at the bottom. Each fingertip is a separate rounded plate, with a dark gap line between neighbours. The little finger is the smallest.
+Count before you finish: one thumb pointing up plus exactly four stacked fingers. Five digits. Not three fingers, not five fingers.
 
-The hand must be anatomically correct and easy to read: a right hand seen from the back, closed around the rope in a firm grip. Four fingers wrap around the front of the rope side by side, each with three segments and a rounded brass knuckle plate, index finger on top and little finger at the bottom, getting slightly smaller. The thumb comes around the near side of the rope and lies across the index finger. The back of the hand, the wrist and the cuff connect naturally. Exactly five digits, no extra or fused fingers.
-
-Ink navy and deep peacock blue water, aged ochre brass, a rare electric turquoise light from the upper left, ruins and a cable silhouetted in the distance, a few specks in the water. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+The back of the hand is one large curved brass plate that joins the riveted cuff; the forearm leaves the frame at the lower left corner. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
 
 ## Platform Zero
 
@@ -46,13 +47,15 @@ A single magnificent ember silk moth game sprite on a fully transparent backgrou
 
 ### First panel, painted again
 
-Paint a new version of the first image: the same shot, the same composition, camera angle, colours and lighting. The second image shows another shot of the same film; match its drawing style exactly.
+Repaint the first image. Keep its colours, lighting, the vines and ivy leaves, the small amber chrysalis hanging on its thin stem in the right half of the frame, the dark glasshouse background and the drawing style exactly. Change the hand: give it a new, simple pose.
 
-The shot: inside a forgotten Victorian glasshouse at dusk, a tight macro view of a keeper's hand in a weathered brown leather work glove with stitched seams, held as a shelter above and behind a small curled amber chrysalis that hangs from a vine. The chrysalis hangs in the right half of the frame, a little above the middle, on its own thin stem, with free space around it. Ivy leaves and vines fill the lower half and the right edge. The forearm comes in from the lower left corner.
+The keeper holds her LEFT hand upright behind the chrysalis as a windbreak, and we look at the PALM of the brown leather work glove. The hand is open like a hand raised to say "stop", tilted a little to the right:
+- The FOUR FINGERS are straight and close together and point up towards the upper right corner. They are four separate fingers of similar width with a clear dark line between neighbours; the middle finger is the longest, the little finger (on the right) the shortest.
+- The THUMB stands apart on the left side of the hand and points up towards the upper left, shorter and thicker than the fingers, with a clear gap between thumb and index finger.
+- Below the fingers the broad palm with a stitched seam, then the wrist and the cuff of the glove, which leave the frame at the bottom left corner.
+Count before you finish: one thumb plus exactly four fingers. Five digits. No sixth finger, no finger below the palm, no fused fingers.
 
-The hand must be anatomically correct and easy to read: a left hand, slightly cupped, fingers together and gently curved over the chrysalis like a small roof, seen from the side. Four fingers lie side by side, each with three segments and visible finger seams, and the thumb sits apart, lower, pointing towards the viewer, with the pad of the thumb visible. The palm, the wrist and the glove's cuff connect naturally. Exactly five digits, natural proportions, no extra or fused fingers, no mitten shape.
-
-Verdigris and deep ivy greens, umber, warm amber light on the edges of the glove from the chrysalis and from orange windows in the far background. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+The chrysalis hangs in front of the lower right part of the palm with a little air around it, and its warm amber light falls on the palm and the fingers. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
 
 ### Second panel, painted again
 
