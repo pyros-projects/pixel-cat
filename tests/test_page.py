@@ -3,6 +3,7 @@
 These tests start a browser without a window (see browser.py) and are skipped where there is none.
 """
 
+import base64
 import json
 import shutil
 import tempfile
@@ -14,7 +15,7 @@ import numpy as np
 
 from browser import Browser
 from pixel_cat import studio
-from pixel_cat.project import Project
+from pixel_cat.project import Project, png_bytes
 
 SKY, BLOCK = (120, 170, 230, 255), (200, 60, 60, 255)
 
@@ -73,6 +74,34 @@ class Page(unittest.TestCase):
         self.assertEqual({(int(x), int(y)) for y, x in np.argwhere(drawn)}, {(x, 3) for x in range(3, 10)})
         self.assertEqual(tuple(project.cel(0, 0)[3, 5]), (242, 166, 90, 255))       # the colour in hand
         self.assertTrue((project.cel(0, 1) == self.scene).all())                    # the other frame is another picture
+
+    def soft(self):
+        """Put a layer on top that one can see through: two swatches of nearly the same colour and strength."""
+        swatches = np.zeros((24, 32, 4), dtype=np.uint8)
+        swatches[2:6, 2:6] = (42, 36, 32, 128)
+        swatches[2:6, 12:16] = (40, 36, 32, 128)
+        swatches[10:14, 2:30, :3] = np.random.default_rng(2).integers(0, 256, (4, 28, 3))
+        swatches[10:14, 2:30, 3] = np.random.default_rng(3).integers(20, 236, (4, 28))
+        self.room.change({"op": "place", "name": "Soft", "frames": [base64.b64encode(png_bytes(swatches)).decode()]}, "you")
+        self.browser.until("window.studio.doc.layers.length === 2 && window.studio.pending === 0 ? 1 : 0")
+        self.browser.run("window.studio.layer = 1")
+        return swatches
+
+    def test_a_stroke_changes_its_cell_and_no_soft_cell_beside_it(self):
+        swatches = self.soft()
+        self.browser.press(*self.cell(20, 20))                                      # one cell, with the pencil
+        self.browser.until("window.studio.meta.undo === 2 ? 1 : 0")
+        now = self.saved().cel(1, 0)
+        self.assertEqual({(int(x), int(y)) for y, x in np.argwhere((now != swatches).any(axis=2))}, {(20, 20)})
+
+    def test_a_moved_piece_arrives_with_its_own_colour(self):
+        swatches = self.soft()
+        self.browser.key("v")
+        self.browser.drag(self.cell(3, 3), self.cell(13, 3))                        # the whole layer, ten cells to the right
+        self.browser.until("window.studio.meta.undo === 2 ? 1 : 0")
+        now = self.saved().cel(1, 0)
+        self.assertTrue((now[2:6, 12:16] == (42, 36, 32, 128)).all())               # where the other swatch was: this one's colour, two steps off
+        self.assertTrue((now[2:6, 22:26] == (40, 36, 32, 128)).all() and not now[2:6, 2:6, 3].any())
 
     def test_a_panel_takes_its_own_presses(self):
         self.browser.press(*self.spot("#tidy"))

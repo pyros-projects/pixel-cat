@@ -60,10 +60,17 @@ async function op(operation) {             // a change to the structure: send it
 async function commit() {                  // the current cel changed under the pencil: send it as it is
   const layer = S.layer, frame = S.frame, cel = S.cels[layer][frame];
   if (!cel) return;
-  thumbs(layer, frame); S.pending++;
+  thumbs(layer, frame);
+  // A canvas gives partly see-through cells back only roughly, so the whole picture cannot be trusted. Which
+  // cells changed can: those that read differently now than they did before the stroke. They go along as a mask.
+  const now = pixels(cel), was = HELD.get(cel), mask = blank(), marks = mask.getContext("2d").createImageData(mask.width, mask.height);
+  let changed = 0;
+  for (let k = 0; k < now.length; k += 4) if (!was || now[k] !== was[k] || now[k + 1] !== was[k + 1] || now[k + 2] !== was[k + 2] || now[k + 3] !== was[k + 3]) { marks.data[k + 3] = 255; changed++; }
+  if (!changed) return;                     // a stroke that changed no cell is no change
+  mask.getContext("2d").putImageData(marks, 0, 0); HELD.set(cel, now); S.pending++;
   try {
     const everywhere = $("spread").checked && S.doc.frames.length > 1;
-    const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: pickedFrames() || "all" } } : {}) } });
+    const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], where: mask.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: pickedFrames() || "all" } } : {}) } });
     S.known = Math.max(S.known, done.rev); S.meta.undo = (S.meta.undo || 0) + 1; S.meta.redo = 0; S.meta.last = [done.note, "you"]; chrome();
     if (everywhere || S.doc.locked || S.doc.layers[layer].joint) await load();   // other frames changed, the palette moved the colours, or a pose has to be drawn again
   } catch (error) { fail(error); await load(); } finally { S.pending--; }
@@ -71,9 +78,12 @@ async function commit() {                  // the current cel changed under the 
 function whenIdle(run) { S.drawing || S.pending ? setTimeout(() => whenIdle(run), 120) : run(); }
 
 // ---------------------------------------------------------------- drawing the picture
+const HELD = new WeakMap();                 // per cel: its cells as the canvas gave them back when the server last held the same
 function cel(create) {
   if (!S.cels[S.layer][S.frame] && create) S.cels[S.layer][S.frame] = blank();
-  return S.cels[S.layer][S.frame];
+  const c = S.cels[S.layer][S.frame];
+  if (c && !HELD.has(c)) HELD.set(c, pixels(c));       // every tool comes through here before it draws
+  return c;
 }
 const DRAWS = ["pencil", "eraser", "fill", "line", "rect", "select", "lasso", "polygon", "move", "melt", "edge", "swap", "mask"];
 function atRest(i) { return i === S.layer && !!S.doc.layers[i].joint && DRAWS.includes(S.tool); }   // drawing a jointed layer: it shows at rest

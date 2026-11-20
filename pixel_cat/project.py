@@ -338,14 +338,12 @@ class Project:
             layer, frame = self._at(op, "layer", layers), self._at(op, "frame", frames)
             before = self.cel(layer, frame)
             image = from_png(base64.b64decode(op["png"]), (self.width, self.height))
-            # A browser canvas holds a partly see-through cell only roughly: the fainter the cell, the coarser
-            # its colour comes back. Where such a cell returns with its alpha and with a colour inside that
-            # error, nobody drew on it, and it keeps the colour it had.
-            alpha = before[..., 3].astype(np.int64)
-            slack = np.floor(127.5 / np.maximum(alpha, 1) + 0.5) + 1
-            near = (np.abs(image[..., :3].astype(np.int64) - before[..., :3]) <= slack[..., None]).all(axis=2)
-            same = (alpha > 0) & (alpha < 255) & (image[..., 3] == alpha) & near
-            image[same] = before[same]
+            if "where" in op:
+                # The page reads its picture back from a browser canvas, and a canvas holds a partly see-through
+                # cell only roughly. So the page also says which cells it changed, as a second PNG: every cell
+                # that is not empty there. Only those are taken; all others keep exactly what they held.
+                drawn = from_png(base64.b64decode(op["where"]), (self.width, self.height))[..., 3] > 0
+                image[~drawn] = before[~drawn]
             self.put(layer, frame, image)
             spread = op.get("spread")
             if not spread:
