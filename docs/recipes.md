@@ -143,3 +143,22 @@ Transparent cells stay transparent in PNG and GIF. In MP4 and WebM they are blac
 `width` and `height` are in cells. `colors` counts the distinct opaque colors over all frames. `stabilized` is the number of cells that were held steady. In recommended mode, `recommendation` holds the settings that were chosen: `width`, `height`, `sampling`, `colors`, `cleanup` and `contrast`.
 
 Outputs are written to temporary files first and moved into place only when every export of the job succeeded.
+
+## Checking an animation
+
+```sh
+pixel-cat check walk.gif -o marked.gif
+```
+
+`check` reads a GIF, a video, a project or a picture as it is and looks for four things:
+
+| Finding | What it is |
+| --- | --- |
+| `flicker` | a cell that differs from the frame before and the frame after, while those two agree. The animation is read as a loop. |
+| `fragments` | groups of at most `--fragment` touching cells of one color (default 3) |
+| `holes` | an empty cell with color on all four sides |
+| `palette` | a color outside the palette: a project's own palette, or `--palette` |
+
+The result lists the counts per frame and the areas where findings gather, largest first, each as a box `[x, y, width, height]`. A flickering area's box goes straight into a `hold` step. `-o` writes a GIF, or a PNG of the worst frame, with the findings tinted: flicker magenta, fragments yellow, holes cyan, off-palette red.
+
+Every finding is a hint for a person to look at. A star may be a one-cell fragment, and a lamp may be meant to blink.

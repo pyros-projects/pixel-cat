@@ -28,6 +28,13 @@ def parser():
     cmds.add_parser("catalog", help="list palettes, modes and recipe options")
     run = cmds.add_parser("run", help="execute a JSON recipe, or read it from stdin with -")
     run.add_argument("recipe")
+    check = cmds.add_parser("check", help="look for flicker, stray fragments, holes and off-palette colours in an animation or a project")
+    check.add_argument("input", help="a GIF, a video, a project or a picture")
+    check.add_argument("--fragment", type=int, default=3, help="groups of up to this many cells count as fragments (default 3)")
+    check.add_argument("--palette", help="a palette from catalog or comma-separated #RRGGBB colours; a project's own palette is used by default")
+    check.add_argument("-o", "--output", help="a GIF or PNG that shows the findings tinted: flicker magenta, fragments yellow, holes cyan, off-palette red")
+    check.add_argument("--frame", type=int, help="the frame for a PNG output (default: the frame with most findings)")
+    check.add_argument("--scale", type=int, default=0, help="enlargement of the output (default: easy to look at)")
     studio = cmds.add_parser("studio", help="open a project in the studio: draw and animate in the browser, alone or with an agent")
     studio.add_argument("project", help="a .pixelcat file; it is created if it does not exist")
     studio.add_argument("--size", default="64x64", help="canvas of a new project, e.g. 32x32")
@@ -130,6 +137,43 @@ def catalog():
     }
 
 
+def run_check(args):
+    """Check a file as it is: nothing is converted, an animation is read frame by frame."""
+    from . import check, frames
+    from .options import integer
+    from .project import SUFFIX, Project
+    from .stills import harden
+
+    path = Path(args.input).resolve(strict=True)
+    palette = None
+    if path.suffix.lower() == SUFFIX:
+        project = Project.load(path)
+        images, _ = project.animation()
+        palette = project.palette or None
+    else:
+        images, _ = frames.read(path, "all" if frames.kind(path) != "video" else frames.VIDEO_FRAMES)
+        images = [harden(image.copy()) for image in images]
+    if args.palette:
+        palette = [c.strip() for c in args.palette.split(",")] if "," in args.palette else PALETTES.get(args.palette)
+        if not palette:
+            raise ValueError(f"Unknown palette: {args.palette}. See `pixel-cat catalog`.")
+    marks = check.inspect(images, palette, integer(args.fragment, 1, 12, "fragment"))
+    result = {"input": str(path), "width": images[0].shape[1], "height": images[0].shape[0], **check.report(marks)}
+    if args.output:
+        target = Path(args.output).resolve()
+        scale = args.scale or max(1, min(24, 640 // max(images[0].shape[:2])))
+        shown = check.marked(images, marks, scale)
+        if target.suffix.lower() == ".gif":
+            frames.write_gif(shown, [250] * len(shown), target, 1)                 # slow enough to read every frame
+        elif target.suffix.lower() == ".png":
+            worst = max(range(len(images)), key=lambda f: sum(result["frames"][f][k] for k in check.KINDS))
+            frames.write_png(shown[worst if args.frame is None else integer(args.frame, 0, len(images) - 1, "frame")], target, 1)
+        else:
+            raise ValueError("The marked output is a GIF or a PNG")
+        result["output"] = str(target)
+    return result
+
+
 def run_studio(args):
     import webbrowser
 
@@ -190,7 +234,9 @@ def main():
             if text:
                 print(text)
             return
-        if args.command == "catalog":
+        if args.command == "check":
+            result = run_check(args)
+        elif args.command == "catalog":
             result = catalog()
         elif args.command == "convert":
             result = execute(convert_job(args), Path.cwd())

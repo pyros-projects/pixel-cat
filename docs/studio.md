@@ -17,6 +17,7 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 - **Colour, layers and chat** on the right. Layers can be hidden, locked, renamed (double-click), faded, reordered and merged. The palette comes from the art with one click.
 - **Selections:** drag with the select tool, move with the move tool, Enter sets the moved piece down, Delete clears, Ctrl+C and Ctrl+V copy and paste, Escape lets go.
 - **Hold selection:** a spot that flickers next to motion you want to keep. Select it, go to the frame where it looks right, and press "hold selection". The studio first shows how many cells would change and marks them in every frame you step through; nothing happens until you press Apply.
+- **Check:** looks through all frames for flicker, stray fragments, holes and colours outside the palette, marks them on the canvas and lists the areas where they gather. "select" turns an area into the selection, ready for "hold selection" or a fix by hand. The list updates after every change.
 - **Import:** drop a picture, a GIF or a video on the canvas. It is converted first: to fit the canvas, the way pixel-cat recommends, or not at all. It lands on a new layer, after the last frame, or in place of the project.
 - **Export:** PNG of the frame, GIF, MP4, WebM, or the project file.
 - **Undo** (Ctrl+Z) and Redo cover everything, also what the agent did. The top bar names the last change and who made it.

@@ -253,6 +253,28 @@ class Animations(Case):
         self.assertTrue(all((some[i][10:16, 22:26] == some[1][10:16, 22:26]).all() for i in range(4)))
         self.assertFalse((some[4][10:16, 22:26] == some[5][10:16, 22:26]).all())
 
+    def test_the_check_finds_flicker_and_names_the_area_to_hold(self):
+        from pixel_cat import check, frames as media
+        images, _ = media.read(self.folder / self.blinkers())
+        found = check.report(check.inspect(images))
+        self.assertEqual(found["total"], {"flicker": 48 * 8, "fragments": 0, "holes": 0, "palette": 0})
+        self.assertEqual(sorted(a["rect"] for a in found["areas"]), [[6, 10, 4, 6], [22, 10, 4, 6]])
+        self.assertEqual(found["areas"][0]["frames"], list(range(8)))
+        self.run_job(input="blink.gif", convert={"mode": "grid", "grid": "native", "sampling": "exact", "colors": 3}, media={"stability": 0},
+                     edits=[{"op": "hold", "rect": found["areas"][0]["rect"]}, {"op": "hold", "rect": found["areas"][1]["rect"]}], export=["calm.gif"])
+        calm, _ = media.read(self.folder / "calm.gif")
+        self.assertEqual(check.report(check.inspect(calm))["total"]["flicker"], 0)
+
+    def test_the_check_finds_fragments_holes_and_colours_off_the_palette(self):
+        from pixel_cat import check
+        image = np.zeros((20, 20, 4), dtype=np.uint8)
+        image[2:18, 2:18] = (200, 60, 60, 255)
+        image[8, 8] = 0                                             # a hole
+        image[12, 12] = (250, 250, 250, 255)                        # a one-cell fragment
+        marks = check.inspect([image], palette=["#c83c3c"], fragment=1)
+        self.assertEqual({k: int(v.sum()) for k, v in marks.items()}, {"flicker": 0, "fragments": 1, "holes": 1, "palette": 1})
+        self.assertTrue(marks["holes"][0, 8, 8] and marks["fragments"][0, 12, 12] and marks["palette"][0, 12, 12])
+
     def test_frames_can_be_thinned_and_sped_up(self):
         result = self.run_job(input=self.gif(), media={"frames": 3, "speed": 200}, convert={"mode": "grid", "grid": 40}, export=["out.gif"])
         self.assertEqual((result["frames"], result["durations"]), (3, [80, 100, 140]))
@@ -405,6 +427,9 @@ class CommandLine(Case):
         self.assertEqual(failed.returncode, 1)
         self.assertIn("Unknown palette", json.loads(failed.stderr)["error"])
         self.assertIn("pico8", json.loads(self.cli("catalog").stdout)["palettes"])
+        checked = json.loads(self.cli("check", "in.png", "-o", "marked.png").stdout)
+        self.assertEqual((checked["width"], set(checked["total"])), (320, {"flicker", "fragments", "holes", "palette"}))
+        self.assertTrue((self.folder / "marked.png").exists())
 
     def test_a_failed_job_writes_nothing(self):
         self.save(self.painting())

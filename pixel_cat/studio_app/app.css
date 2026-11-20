@@ -118,3 +118,14 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
   background: var(--panel); border: 1px solid var(--cyan); border-radius: 10px; padding: 7px 10px 7px 14px; box-shadow: 0 10px 30px #0009; cursor: default; }
 .proposal[hidden] { display: none; }
 .proposal span b { color: var(--cyan); }
+.findings { position: absolute; left: 12px; top: 12px; z-index: 3; width: 290px; max-height: 70%; overflow: auto; cursor: default;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 30px #0009; }
+.findings[hidden] { display: none; }
+.findings h3 { margin: 0 0 6px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+.findings p { margin: 4px 0 8px; color: var(--quiet); }
+.findings .kinds { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.findings .kinds span { border-radius: 999px; padding: 1px 8px; background: var(--raised); white-space: nowrap; }
+.findings .kinds i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.findings .area { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 3px 0; border-top: 1px solid var(--line); }
+.findings .area small { color: var(--quiet); display: block; }
+.findings .area button { padding: 1px 8px; }

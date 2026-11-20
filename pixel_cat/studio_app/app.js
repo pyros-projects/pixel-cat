@@ -44,7 +44,7 @@ async function load(flash) {
 }
 async function op(operation) {             // a change to the structure: send it, then take the result over
   drop(); if (S.proposal) endProposal(); S.pending++;
-  try { const done = await send("/api/op", { op: operation }); S.known = Math.max(S.known, done.rev); await load(); return done; }
+  try { const done = await send("/api/op", { op: operation }); S.known = Math.max(S.known, done.rev); await load(); if (S.findings) runCheck(); return done; }
   catch (error) { fail(error); } finally { S.pending--; }
 }
 async function commit() {                  // the current cel changed under the pencil: send it as it is
@@ -103,6 +103,12 @@ function overlay() {
     ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
     for (const [colour, offset] of [["#000", 0], ["#fff", 4]]) { ctx.strokeStyle = colour; ctx.lineDashOffset = offset; ctx.strokeRect(X(box.x) + 0.5, Y(box.y) + 0.5, box.w * z, box.h * z); }
     ctx.setLineDash([]);
+  }
+  if (S.findings) {                         // what the check found in this frame, each kind in its colour
+    for (const [kind, [colour]] of Object.entries(KINDS)) {
+      ctx.fillStyle = colour; const size = Math.max(2, Math.round(z / 3));
+      for (const [x, y] of S.findings.cells[kind][S.frame] || []) ctx.fillRect(X(x) + (z - size) / 2, Y(y) + (z - size) / 2, size, size);
+    }
   }
   if (S.proposal) {                         // the cells of this frame that the proposed change would touch
     ctx.strokeStyle = "#5ec4c8"; ctx.lineWidth = 1.5;
@@ -388,6 +394,29 @@ function proposeHold() {
   propose(`Hold the selection as it is in frame ${from + 1}, in all ${S.doc.frames.length} frames.`, marks, () => op({ op: "hold", layer, from, ...where }));
 }
 
+// ---------------------------------------------------------------- the check: where to look
+const KINDS = { flicker: ["#ff00dc", "flicker"], fragments: ["#ffdc00", "fragments"], holes: ["#00e6ff", "holes"], palette: ["#ff2828", "off the palette"] };
+function span(frames) { return frames.length > 1 && frames[frames.length - 1] - frames[0] === frames.length - 1 ? `frames ${frames[0] + 1} to ${frames[frames.length - 1] + 1}` : "frame" + (frames.length > 1 ? "s " : " ") + frames.map(f => f + 1).join(", "); }
+async function runCheck() {
+  drop();
+  try { S.findings = await api("/api/check?fragment=3" + (S.doc.palette.length ? "&palette=1" : "")); } catch (error) { return fail(error); }
+  const box = $("findings"), total = Object.values(S.findings.total).reduce((a, b) => a + b, 0);
+  box.replaceChildren();
+  const head = document.createElement("h3"); head.textContent = total ? "Worth a look" : "Nothing suspicious"; const close = document.createElement("button"); close.textContent = "×"; close.className = "quiet"; close.title = "Close";
+  close.onclick = () => { S.findings = null; box.hidden = true; overlay(); }; head.append(close); box.append(head);
+  const kinds = document.createElement("div"); kinds.className = "kinds";
+  for (const [kind, [colour, label]] of Object.entries(KINDS)) { const chip = document.createElement("span"), dot = document.createElement("i"); dot.style.background = colour; chip.append(dot, `${S.findings.total[kind]} ${label}`); kinds.append(chip); }
+  box.append(kinds);
+  const hint = document.createElement("p"); hint.textContent = total ? "Hints, not verdicts: a star may be a fragment, a lamp may be meant to blink. Select an area, then hold it or fix it by hand." : "No flicker, no stray fragments, no holes."; box.append(hint);
+  for (const area of S.findings.areas) {
+    const row = document.createElement("div"), text = document.createElement("div"), pick = document.createElement("button"); row.className = "area";
+    text.textContent = `${KINDS[area.kind][1]}: ${area.cells} cell${area.cells > 1 ? "s" : ""}`; const where = document.createElement("small"); where.textContent = `${span(area.frames)}, at ${area.rect[0]}, ${area.rect[1]} (${area.rect[2]} × ${area.rect[3]})`; text.append(where);
+    pick.textContent = "select"; pick.onclick = () => { const [x, y, w, h] = area.rect; setTool("select"); S.sel = { x, y, w, h }; go(area.frames.includes(S.frame) ? S.frame : area.frames[0], S.layer); context(); reportView(); };
+    row.append(text, pick); box.append(row);
+  }
+  box.hidden = false; overlay();
+}
+
 // ---------------------------------------------------------------- chat
 function showMessage(message) {
   const box = $("messages"), line = document.createElement("div"); line.className = "msg " + message.from;
@@ -445,7 +474,7 @@ $("duration").onchange = event => op({ op: "set-frame", frame: S.frame, duration
 $("durationAll").onclick = () => op({ op: "set-frame", frame: "all", duration: +$("duration").value });
 $("first").onclick = () => go(0, S.layer); $("lastFrame").onclick = () => go(S.doc.frames.length - 1, S.layer);
 $("prev").onclick = () => go((S.frame - 1 + S.doc.frames.length) % S.doc.frames.length, S.layer); $("next").onclick = () => go((S.frame + 1) % S.doc.frames.length, S.layer);
-$("play").onclick = play; $("onion").onchange = draw; $("grid").onchange = overlay; $("hold").onclick = proposeHold;
+$("play").onclick = play; $("onion").onchange = draw; $("grid").onchange = overlay; $("hold").onclick = proposeHold; $("check").onclick = runCheck;
 $("size").onclick = () => {
   const answer = prompt("Canvas size in cells, width x height", `${S.doc.width}x${S.doc.height}`); if (!answer) return;
   const [w, h] = answer.toLowerCase().split("x").map(n => parseInt(n, 10)); if (w && h) op({ op: "resize", width: w, height: h }).then(() => { fit(); chrome(); draw(); });

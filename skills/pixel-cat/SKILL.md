@@ -64,6 +64,9 @@ with a nonzero exit.
   picture, the way `<home>/examples/recipes/lake-loop.json` does.
 - A recipe can live next to the user's files. Paths inside it resolve against
   the recipe's own folder.
+- Check an animation before you hand it over: `pixel-cat check /abs/out.gif`
+  lists flicker, stray fragments and holes with the areas where they gather.
+  A flickering area's box goes into `--hold x,y,width,height`.
 - Look at what you made before you hand it over. A PNG at `--scale 1` has one
   pixel per cell; the default scale is easier to judge by eye.
 

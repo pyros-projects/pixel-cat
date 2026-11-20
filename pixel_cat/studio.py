@@ -202,6 +202,23 @@ def handler_for(studio):
                     if query.get("as") == "json":
                         return self.send(200, {"project": str(studio.path), "viewing": view, **summary})
                     return self.send(200, png_bytes(frames.enlarge(image, max(1, min(32, int(query.get("scale", 8)))))), "image/png")
+                if url.path == "/api/check":
+                    from . import check
+                    with studio.lock:
+                        images, _ = studio.project.animation()
+                        palette = studio.project.palette if query.get("palette") == "1" else None
+                    marks = check.inspect(images, palette, max(1, min(12, int(query.get("fragment", 3)))))
+                    found = check.report(marks)
+                    # the marked cells themselves, per kind and frame, for the page to draw (capped)
+                    cells, budget = {}, 40000
+                    for kind in check.KINDS:
+                        cells[kind] = []
+                        for frame in marks[kind]:
+                            ys, xs = frame.nonzero()
+                            take = min(len(xs), max(0, budget))
+                            budget -= take
+                            cells[kind].append([[int(x), int(y)] for x, y in zip(xs[:take], ys[:take])])
+                    return self.send(200, {**found, "cells": cells})
                 if url.path == "/api/export":
                     fmt = query.get("format", "png")
                     if fmt not in ("png", "gif", "mp4", "webm", "project"):
