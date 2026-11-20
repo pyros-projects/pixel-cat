@@ -166,16 +166,114 @@ def clean(images, step):
 def mend(image, hole, window=3):
     """Paint what lies around a hole into it, and return the new picture.
 
+    Where the picture repeats itself around the hole, as bricks, tiles or any regular pattern do, the pattern
+    is carried on: whole patches are copied from places that look like what is already there (see _carry_on).
+    Everything else is painted cell by cell in the colours that are common nearby (see _common). No colour
+    comes in that the picture did not have, and the same hole is always filled the same way.
+    """
+    out = image.copy()
+    if not hole.any() or hole.all():
+        return out
+    left = _carry_on(out, hole)
+    if left.any():
+        _common(out, left, window)
+    return out
+
+
+def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
+    """Carry a pattern on into a hole, in place, and return the cells that are still open.
+
+    The cell on the rim of the hole where a line of the picture runs most strongly into it comes first. The
+    patch around it, 17 cells wide, is half known. Among all patches near the hole that are known in full, the
+    one that looks most like the known half is copied into the open half; of two that fit alike, the nearer
+    one. A patch is only taken when it differs from the known half by at most `fit` levels (root mean square),
+    when a third of the patch is known, and when the known half has a pattern at all: on calm ground a copied
+    patch would only bring along whatever lone detail lies in it. Cells for which no patch is good enough stay
+    open.
+    """
+    h, w = hole.shape
+    k, r = 2 * radius + 1, radius
+    ys, xs = np.nonzero(hole)
+    top, left = max(0, int(ys.min()) - reach), max(0, int(xs.min()) - reach)
+    bottom, right = min(h, int(ys.max()) + 1 + reach), min(w, int(xs.max()) + 1 + reach)
+    tall, wide = bottom - top + 2 * r, right - left + 2 * r           # the hole and its surroundings, with a rim so that every patch is whole
+    art = np.zeros((tall, wide, 4), dtype=np.float32)
+    art[r:tall - r, r:wide - r] = out[top:bottom, left:right]
+    inside = np.zeros((tall, wide), dtype=bool)
+    inside[r:tall - r, r:wide - r] = True
+    todo = np.zeros((tall, wide), dtype=bool)
+    todo[r:tall - r, r:wide - r] = hole[top:bottom, left:right]
+    cy, cx = np.nonzero(np.lib.stride_tricks.sliding_window_view(inside & ~todo, (k, k)).all(axis=(2, 3)))     # patches known in full, by their top left corner
+    most = max(500, 48_000_000 // (k * k * 4 * 8))                    # as many as fit into some 50 MB
+    if len(cy) > most:
+        keep = np.arange(0, len(cy), -(-len(cy) // most))
+        cy, cx = cy[keep], cx[keep]
+    if not len(cy):
+        return hole.copy()
+    stack = np.lib.stride_tricks.sliding_window_view(art, (k, k), axis=(0, 1))[cy, cx]
+    stack = np.ascontiguousarray(stack.transpose(0, 2, 3, 1).reshape(len(cy), k * k * 4))
+    squares = stack * stack
+    sure = (inside & ~todo).astype(np.float32)                        # how far a cell can be trusted: 1 where it was known
+    skipped = np.zeros_like(todo)
+    boxes = lambda a: np.lib.stride_tricks.sliding_window_view(np.pad(a, r), (k, k))     # noqa: E731
+    while True:
+        done = inside & ~todo
+        rim = np.zeros_like(todo)
+        rim[1:] |= done[:-1]
+        rim[:-1] |= done[1:]
+        rim[:, 1:] |= done[:, :-1]
+        rim[:, :-1] |= done[:, 1:]
+        fy, fx = np.nonzero(todo & rim & ~skipped)
+        if not len(fy):
+            break
+        trust = boxes(sure)[fy, fx].sum(axis=(1, 2)) / (k * k)
+        # how strongly a line runs into the hole: the strongest change of light nearby, turned by a quarter, against the way out of the hole
+        tone = np.where(done, stills.luma(art[..., :3].astype(np.float64)), np.nan)
+        gy, gx = (np.nan_to_num(g) for g in np.gradient(tone))
+        at = boxes(gx * gx + gy * gy)[fy, fx].reshape(len(fy), -1).argmax(axis=1)
+        sy, sx = np.clip(fy + at // k - r, 0, tall - 1), np.clip(fx + at % k - r, 0, wide - 1)
+        ny, nx = np.gradient(todo.astype(np.float64))
+        length = np.hypot(ny[fy, fx], nx[fy, fx]) + 1e-6
+        line = np.abs(gx[sy, sx] * ny[fy, fx] - gy[sy, sx] * nx[fy, fx]) / length / 255
+        first = int(np.argmax(trust * (line + 0.001)))
+        y, x = int(fy[first]), int(fx[first])
+        here = (slice(y - r, y + r + 1), slice(x - r, x + r + 1))
+        have = done[here].reshape(k * k)
+        shades = tone[here].reshape(k * k)[have]
+        patterned = len(shades) and float((np.abs(shades - np.median(shades)) >= 24).mean()) >= 0.05
+        if have.mean() < 1 / 3 or not patterned:
+            skipped[y, x] = True
+            continue
+        weight = np.repeat(have, 4).astype(np.float32)
+        target = art[here].reshape(-1) * weight
+        apart = (squares @ weight - 2 * (stack @ target) + float(target @ target)) / float(weight.sum())   # mean squared difference per value
+        pick = int(np.argmin(apart + far * ((cy + r - y) ** 2 + (cx + r - x) ** 2)))
+        if apart[pick] > fit * fit:
+            skipped[y, x] = True
+            continue
+        open_ = todo[here]
+        art[here][open_] = stack[pick].reshape(k, k, 4)[open_]
+        sure[here][open_] = trust[first]
+        todo[here] = False
+        skipped[max(0, y - k):y + k + 1, max(0, x - k):x + k + 1] = False     # with more known around them, their turn may come
+    filled = hole[top:bottom, left:right] & ~todo[r:tall - r, r:wide - r]
+    out[top:bottom, left:right][filled] = art[r:tall - r, r:wide - r][filled].astype(np.uint8)
+    left_open = hole.copy()
+    left_open[top:bottom, left:right] &= ~filled
+    return left_open
+
+
+def _common(out, hole, window=3):
+    """Fill a hole cell by cell, in place, with the colours that are common around it.
+
     Each cell of the hole looks at the nearest cell outside. If that cell is empty, the cell stays empty, so
     a figure on empty ground does not grow where a piece of it was taken away. Otherwise it draws one of
     the colours that are common around that cell, by their shares: the grain of the surroundings carries on,
     and a lone highlight that passes close by is a minority and stays out. A cell that then stands out from
-    the middle tone around it takes a colour nearer to that tone. The same hole is always filled the same way.
+    the middle tone around it takes a colour nearer to that tone.
     """
-    out = image.copy()
+    image = out.copy()
     h, w = hole.shape
-    if not hole.any() or hole.all():
-        return out
     # the nearest cell outside, for every cell: what is known spreads inwards ring by ring
     ys, xs = np.indices((h, w))
     known = ~hole
@@ -220,7 +318,6 @@ def mend(image, hole, window=3):
             py, px = np.divmod(painted[stray], w)
             sy, sx = np.clip(py + best // 7 - 3, 0, h - 1), np.clip(px + best % 7 - 3, 0, w - 1)
             flat[painted[stray]] = out[sy, sx]
-    return out
 
 
 def area(step, width, height):

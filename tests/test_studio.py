@@ -529,6 +529,18 @@ class Joints(unittest.TestCase):
         self.assertFalse(rest[14:18, 24:50, 3].any())
         self.assertLessEqual(int((rest[14:18, 22:24, 3] > 0).sum()), 4)                     # at most a stub at the shoulder
         self.assertTrue((rest[8:32, 10:22] == figure[8:32, 10:22]).all())
+        # a ground that repeats itself is carried on: a floor laid from one tile, with a crate standing on it
+        tile = np.zeros((16, 16, 3), dtype=np.uint8)
+        tile[...] = (150, 120, 90)
+        tile[0, :] = tile[:, 0] = (70, 55, 45)                                              # joints
+        tile[4:7, 9:13] = (175, 140, 100)                                                   # a worn spot, off centre
+        tile[11, 3:8] = (110, 88, 70)                                                       # a crack
+        floor = np.dstack([np.tile(tile, (5, 7, 1)), np.full((80, 112), 255, dtype=np.uint8)])
+        crate = floor.copy()
+        crate[22:58, 34:76] = (60, 90, 160, 255)
+        t = Project.from_frames([crate], [100])
+        t.apply({"op": "part", "layer": 0, "rect": [34, 22, 42, 36], "fill": True})
+        self.assertTrue((t.layers[0]["cels"][0] == floor).all())                            # joints, spots and cracks, each where it belongs
         # a filling must not show while the part rests: none under cells one can see through, none on a faded layer
         glass = scene.copy()
         glass[10:30, 20:30, 3] = 128                                                        # the left half of the block is half see-through
