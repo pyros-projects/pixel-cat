@@ -590,6 +590,9 @@ class Project:
                 raise ValueError("part needs an area: rect, points or cells")
             if layers >= LIMITS["layers"]:
                 raise ValueError("A project holds up to 32 layers")
+            if op.get("fill") and source["opacity"] < 1:
+                raise ValueError(f"Layer {source['name']} is shown at {round(source['opacity'] * 100)} %, so a filling under the part would show through "
+                                 "it and make it look denser. Leave the place empty, or set the layer to full strength first.")
             mask = edits.area(op, self.width, self.height)
             split, reach = {}, np.zeros_like(mask)                    # a drawing held over several frames is split once
             for cel in source["cels"]:
@@ -598,8 +601,9 @@ class Project:
                 taken = mask & (cel[..., 3] > 0)
                 piece, rest = self.blank(), cel.copy()
                 piece[taken], rest[taken] = cel[taken], 0
-                if op.get("fill") and taken.any():                    # what lies around the piece is painted into its place
-                    rest = edits.mend(rest, taken)
+                if op.get("fill") and taken.any():                    # what lies around the piece is painted into its place,
+                    rest = edits.mend(rest, taken)                    # but not under cells one can see through: there it would show
+                    rest[taken & (cel[..., 3] < 255)] = 0
                 split[id(cel)] = (rest if rest[..., 3].any() else None, piece if taken.any() else None)
                 reach |= taken
             if not reach.any():

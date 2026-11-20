@@ -509,6 +509,19 @@ class Joints(unittest.TestCase):
         self.assertFalse(rest[14:18, 24:50, 3].any())
         self.assertLessEqual(int((rest[14:18, 22:24, 3] > 0).sum()), 4)                     # at most a stub at the shoulder
         self.assertTrue((rest[8:32, 10:22] == figure[8:32, 10:22]).all())
+        # a filling must not show while the part rests: none under cells one can see through, none on a faded layer
+        glass = scene.copy()
+        glass[10:30, 20:30, 3] = 128                                                        # the left half of the block is half see-through
+        r = Project.from_frames([glass], [100])
+        r.apply({"op": "part", "layer": 0, "rect": [20, 10, 20, 20], "fill": True})
+        self.assertTrue((r.composite(0) == glass).all())
+        self.assertFalse(r.layers[0]["cels"][0][10:30, 20:30, 3].any())                     # nothing under the glass ...
+        self.assertTrue((r.layers[0]["cels"][0][10:30, 30:40, 3] == 255).all())             # ... the wall under the solid half
+        faded = Project.from_frames([scene], [100])
+        faded.apply({"op": "set-layer", "layer": 0, "opacity": 0.5})
+        with self.assertRaisesRegex(ValueError, "is shown at 50 %, so a filling under the part would show through"):
+            faded.apply({"op": "part", "layer": 0, "rect": [20, 10, 20, 20], "fill": True})
+        self.assertEqual(len(faded.layers), 1)
 
     def test_baking_turns_the_motion_into_plain_frames(self):
         p = self.arm()
