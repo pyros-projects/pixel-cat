@@ -12,7 +12,7 @@
 
 [![License: MIT][license-shield]][license-url]
 [![Python 3.11+][python-shield]][python-url]
-[![Version 0.6.0][version-shield]][version-url]
+[![Version 0.6.1][version-shield]][version-url]
 [![Exports PNG, GIF, MP4, WebM][exports-shield]][exports-url]
 [![npx skills add pyros-projects/pixel-cat][skill-shield]][skill-url]
 [![Runs offline][offline-shield]][offline-url]
@@ -200,7 +200,7 @@ uv run python .agents/skills/pixel-cat-film/scripts/render.py \
 uv run python -m unittest discover -s tests -v
 ```
 
-The tests build their own inputs and check what a conversion promises: the grid size, the color limit, palette membership, kept outlines, restored pixel grids, mirrored halves, steady still areas in a loop, and the frame counts and timings of GIF, sprite-sheet and video jobs, loops that close without a jump, the film camera, lifted props, project files and the studio's server.
+The tests build their own inputs and check what a conversion promises: the grid size, the color limit, palette membership, kept outlines, restored pixel grids, mirrored halves, steady still areas in a loop, and the frame counts and timings of GIF, sprite-sheet and video jobs, loops that close without a jump, the film camera, lifted props, project files and the studio's server. A few press the studio's page in a browser without a window, with real pointer input; they are skipped where no such browser is installed.
 
 ## License
 
@@ -210,7 +210,7 @@ The tests build their own inputs and check what a conversion promises: the grid 
 [license-url]: LICENSE
 [python-shield]: https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white
 [python-url]: pyproject.toml
-[version-shield]: https://img.shields.io/badge/version-0.6.0-6b5fb5?style=flat-square
+[version-shield]: https://img.shields.io/badge/version-0.6.1-6b5fb5?style=flat-square
 [version-url]: pyproject.toml
 [exports-shield]: https://img.shields.io/badge/exports-PNG%20%C2%B7%20GIF%20%C2%B7%20MP4%20%C2%B7%20WebM-c9682c?style=flat-square
 [exports-url]: docs/recipes.md
