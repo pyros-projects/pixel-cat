@@ -163,6 +163,66 @@ def clean(images, step):
     return images
 
 
+def mend(image, hole, window=3):
+    """Paint what lies around a hole into it, and return the new picture.
+
+    Each cell of the hole looks at the nearest cell outside. If that cell is empty, the cell stays empty, so
+    a figure on empty ground does not grow where a piece of it was taken away. Otherwise it draws one of
+    the colours that are common around that cell, by their shares: the grain of the surroundings carries on,
+    and a lone highlight that passes close by is a minority and stays out. A cell that then stands out from
+    the middle tone around it takes a colour nearer to that tone. The same hole is always filled the same way.
+    """
+    out = image.copy()
+    h, w = hole.shape
+    if not hole.any() or hole.all():
+        return out
+    # the nearest cell outside, for every cell: what is known spreads inwards ring by ring
+    ys, xs = np.indices((h, w))
+    known = ~hole
+    near_y, near_x = np.where(known, ys, -1), np.where(known, xs, -1)
+    while not known.all():
+        grown, grown_y, grown_x = known.copy(), near_y.copy(), near_x.copy()
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+            here = (slice(max(0, -dy), h + min(0, -dy)), slice(max(0, -dx), w + min(0, -dx)))
+            there = (slice(max(0, dy), h + min(0, dy)), slice(max(0, dx), w + min(0, dx)))
+            take = known[there] & ~grown[here]
+            grown_y[here][take], grown_x[here][take] = near_y[there][take], near_x[there][take]
+            grown[here] |= take
+        known, near_y, near_x = grown, grown_y, grown_x
+    code = image[..., 0].astype(np.int64) << 24 | image[..., 1].astype(np.int64) << 16 | image[..., 2].astype(np.int64) << 8 | image[..., 3]
+    art = ~hole & (image[..., 3] > 0)
+    cells = np.flatnonzero(hole)
+    origin = near_y.ravel()[cells] * w + near_x.ravel()[cells]
+    dice = np.random.default_rng(len(cells) * 7919 + int(cells[0]))
+    filled = np.zeros(len(cells), dtype=np.int64)
+    for spot in np.unique(origin):
+        y, x = divmod(int(spot), w)
+        if not art[y, x]:
+            continue                                               # empty ground stays empty
+        box = (slice(max(0, y - window), y + window + 1), slice(max(0, x - window), x + window + 1))
+        colours, counts = np.unique(code[box][art[box]], return_counts=True)
+        keep = counts >= min(counts.max(), counts.sum() * 0.3)     # when nothing holds that much: the most common one
+        shares = np.cumsum(counts[keep] / counts[keep].sum())
+        mine = origin == spot
+        filled[mine] = colours[keep][np.minimum(len(shares) - 1, np.searchsorted(shares, dice.random(int(mine.sum()))))]
+    flat = out.reshape(-1, 4)
+    flat[cells] = np.stack([filled >> 24 & 255, filled >> 16 & 255, filled >> 8 & 255, filled & 255], axis=1)
+    # strays: a filled cell far from the middle tone of the art around it takes the colour there that is nearest to it
+    light = np.where(out[..., 3] > 0, stills.luma(out[..., :3].astype(np.float64)), np.nan)
+    views = np.lib.stride_tricks.sliding_window_view(np.pad(light, 3, constant_values=np.nan), (7, 7))
+    painted = cells[filled != 0]
+    if len(painted):
+        around = views.reshape(h * w, 49)[painted]
+        middle = np.nanmedian(around, axis=1)
+        stray = np.abs(light.ravel()[painted] - middle) > 60
+        if stray.any():
+            best = np.nanargmin(np.abs(around[stray] - middle[stray, None]), axis=1)
+            py, px = np.divmod(painted[stray], w)
+            sy, sx = np.clip(py + best // 7 - 3, 0, h - 1), np.clip(px + best % 7 - 3, 0, w - 1)
+            flat[painted[stray]] = out[sy, sx]
+    return out
+
+
 def area(step, width, height):
     """The cells a step works on, as a mask: `rect` [x, y, width, height], `points` (a polygon in cells; a
     cell is inside when its centre is), or `cells` (a list of [x, y]). Without any of them: the whole picture."""

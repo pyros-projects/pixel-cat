@@ -889,11 +889,16 @@ $("paletteDialog").addEventListener("close", () => { if ($("paletteDialog").retu
 $("named").onchange = () => { const name = $("named").value; $("named").value = ""; if (name) op({ op: "palette", name }); };
 $("addLayer").onclick = async () => { const done = await op({ op: "add-layer", at: S.layer + 1 }); if (done) go(S.frame, S.layer + 1); };
 $("delLayer").onclick = () => op({ op: "remove-layer", layer: S.layer });
-$("partLayer").onclick = async () => {      // the selection becomes a part of its own; the next click on the picture says where it turns
+$("partLayer").onclick = event => {         // the selection becomes a part of its own: first the choice what happens to its place
+  event.stopPropagation();
   if (!S.sel) return toast("Select the piece first: with a box (M), a lasso (Q), a polygon (W) or the brush (A)");
-  if (!usable()) return;
+  $("partMenu").hidden = !$("partMenu").hidden;
+};
+document.addEventListener("click", () => $("partMenu").hidden = true);
+$("partMenu").onclick = async event => {     // then the next click on the picture says where it turns
+  const fill = event.target.dataset.fill; if (fill === undefined || !S.sel || !usable()) return;
   const from = S.layer, where = S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] };
-  if (!await op({ op: "part", layer: from, ...where })) return;
+  if (!await op({ op: "part", layer: from, ...where, ...(fill === "1" ? { fill: true } : {}) })) return;
   S.sel = null; go(S.frame, from + 1); setTool("pose"); S.pivoting = true; jointForm(); toast("Click where the part turns");
 };
 $("mergeLayer").onclick = async () => { const done = await op({ op: "merge-down", layer: S.layer }); if (done) go(S.frame, S.layer - 1); };

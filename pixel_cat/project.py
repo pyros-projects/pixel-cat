@@ -581,7 +581,7 @@ class Project:
         if kind == "part":
             # a piece of a layer becomes a part of its own: its drawn cells move to a new layer above, on every
             # frame, and that layer gets a joint
-            keys(op, {"op", "layer", "rect", "points", "cells", "name", "pivot"}, "part")
+            keys(op, {"op", "layer", "rect", "points", "cells", "name", "pivot", "fill"}, "part")
             index = self._at(op, "layer", layers)
             source = self.layers[index]
             if source["locked"]:
@@ -598,6 +598,8 @@ class Project:
                 taken = mask & (cel[..., 3] > 0)
                 piece, rest = self.blank(), cel.copy()
                 piece[taken], rest[taken] = cel[taken], 0
+                if op.get("fill") and taken.any():                    # what lies around the piece is painted into its place
+                    rest = edits.mend(rest, taken)
                 split[id(cel)] = (rest if rest[..., 3].any() else None, piece if taken.any() else None)
                 reach |= taken
             if not reach.any():
@@ -613,7 +615,7 @@ class Project:
                             "sway": None, "keys": [None] * frames}
             self.layers.insert(index + 1, new)
             return (f"made a part of {int(reach.sum())} cells of layer {source['name']}: they are on the new layer {new['name']} above it, "
-                    f"which turns around {pivot[0]:g}, {pivot[1]:g}")
+                    f"which turns around {pivot[0]:g}, {pivot[1]:g}" + ("; their place is filled from the art around it" if op.get("fill") else ""))
         if kind == "pose":
             # a key on one frame: how far the jointed layer is turned and moved there
             keys(op, {"op", "layer", "frame", "angle", "x", "y", "ease", "remove"}, "pose")

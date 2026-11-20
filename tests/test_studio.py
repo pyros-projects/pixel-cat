@@ -454,6 +454,35 @@ class Joints(unittest.TestCase):
         faded.apply({"op": "part", "layer": 0, "rect": [10, 10, 4, 8]})
         self.assertEqual([l["visible"] for l in faded.layers], [False, False, True])
 
+    def test_the_place_a_part_leaves_can_be_filled_from_around_it(self):
+        rng = np.random.default_rng(6)
+        # a flat scene: a wall in two browns, a red block on it, and one bright nail right above the block
+        wall = np.array([(60, 40, 30), (70, 48, 34)], dtype=np.uint8)[rng.integers(0, 2, (40, 60))]
+        scene = np.dstack([wall, np.full((40, 60), 255, dtype=np.uint8)])
+        scene[10:30, 20:40] = (200, 60, 60, 255)
+        scene[8, 30] = (255, 255, 200, 255)
+        p = Project.from_frames([scene], [100])
+        self.assertIn("their place is filled from the art around it", p.apply({"op": "part", "layer": 0, "rect": [20, 10, 20, 20], "fill": True}))
+        below = p.layers[0]["cels"][0]
+        self.assertTrue((below[10:30, 20:40, 3] == 255).all())                              # nothing is left open
+        self.assertEqual({tuple(int(v) for v in c) for c in below[10:30, 20:40, :3].reshape(-1, 3)}, {(60, 40, 30), (70, 48, 34)})   # the wall, neither block nor nail
+        self.assertTrue((p.composite(0) == scene).all())                                    # at rest the picture is as it was
+        p.apply({"op": "pose", "layer": 1, "frame": 0, "x": 25})
+        self.assertTrue((p.composite(0)[10:30, 20:40, 3] == 255).all())                     # the block moved away: the wall shows
+        again = Project.from_frames([scene], [100])
+        again.apply({"op": "part", "layer": 0, "rect": [20, 10, 20, 20], "fill": True})
+        self.assertTrue((again.layers[0]["cels"][0] == below).all())                        # the same wall every time
+        # a figure on empty ground: where its arm stuck out the ground stays empty, and the body does not grow
+        figure = np.zeros((40, 60, 4), dtype=np.uint8)
+        figure[8:32, 10:22] = (200, 60, 60, 255)
+        figure[14:18, 22:50] = (240, 200, 160, 255)
+        q = Project.from_frames([figure], [100])
+        q.apply({"op": "part", "layer": 0, "rect": [22, 14, 28, 4], "fill": True})
+        rest = q.layers[0]["cels"][0]
+        self.assertFalse(rest[14:18, 24:50, 3].any())
+        self.assertLessEqual(int((rest[14:18, 22:24, 3] > 0).sum()), 4)                     # at most a stub at the shoulder
+        self.assertTrue((rest[8:32, 10:22] == figure[8:32, 10:22]).all())
+
     def test_baking_turns_the_motion_into_plain_frames(self):
         p = self.arm()
         before = [p.composite(f) for f in range(4)]

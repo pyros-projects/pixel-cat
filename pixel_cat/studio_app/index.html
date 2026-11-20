@@ -101,7 +101,11 @@
   </section>
   <section class="layers">
     <h2>Layers <span class="acts">
-      <button id="addLayer" title="New layer">+</button><button id="upLayer" title="Move up">&#9650;</button><button id="downLayer" title="Move down">&#9660;</button><button id="mergeLayer" title="Merge into the layer below">&#10515;</button><button id="partLayer" title="Make the selection a part: its cells move to a new layer with a joint, on every frame. Then click where it turns.">part</button><button id="delLayer" title="Delete layer">&times;</button></span></h2>
+      <button id="addLayer" title="New layer">+</button><button id="upLayer" title="Move up">&#9650;</button><button id="downLayer" title="Move down">&#9660;</button><button id="mergeLayer" title="Merge into the layer below">&#10515;</button><span class="menu"><button id="partLayer" title="Make the selection a part: its cells move to a new layer with a joint, on every frame. Then click where it turns.">part</button>
+        <span class="drop" id="partMenu" hidden>
+          <button data-fill="0" title="Where the piece was, the layer below is empty afterwards. Right for a figure on empty ground.">The selection becomes a part</button>
+          <button data-fill="1" title="What lies around the piece is painted into its place, so nothing opens up when the part moves. Right for a piece of a flat scene.">... and its place is filled from around it</button>
+        </span></span><button id="delLayer" title="Delete layer">&times;</button></span></h2>
     <div id="layerList"></div>
   </section>
   <section class="chat">
