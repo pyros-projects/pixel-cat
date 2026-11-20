@@ -153,7 +153,52 @@ def clean(images, step):
     return images
 
 
-OPS = {"cutout": cutout, "trim": trim, "outline": outline, "pad": pad, "flip": flip, "shift": shift, "replace": replace, "clean": clean}
+def area(step, width, height):
+    """The cells a step works on, as a mask: `rect` [x, y, width, height], `points` (a polygon in cells; a
+    cell is inside when its centre is), or `cells` (a list of [x, y]). Without any of them: the whole picture."""
+    mask = np.zeros((height, width), dtype=bool)
+    if "rect" in step:
+        x, y, w, h = (int(v) for v in step["rect"])
+        mask[max(0, y):max(0, y + h), max(0, x):max(0, x + w)] = True
+    elif "points" in step:
+        points = [(float(x), float(y)) for x, y in step["points"]]
+        if len(points) < 3:
+            raise ValueError("A polygon needs at least three points")
+        xs, ys = (np.arange(width) + 0.5)[None, :], (np.arange(height) + 0.5)[:, None]
+        for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]):
+            if y1 != y2:
+                mask ^= ((y1 > ys) != (y2 > ys)) & (xs < (x2 - x1) * (ys - y1) / (y2 - y1) + x1)
+    elif "cells" in step:
+        for x, y in step["cells"]:
+            if 0 <= x < width and 0 <= y < height:
+                mask[int(y), int(x)] = True
+    else:
+        mask[:] = True
+    return mask
+
+
+def targets(step, count, name="frames"):
+    """Which frames a step reaches: "all" (the default) or a list of frame numbers."""
+    wanted = step.get(name, "all")
+    if wanted == "all":
+        return list(range(count))
+    return [integer(f, 0, count - 1, "frame") for f in wanted]
+
+
+def hold(images, step):
+    """Make an area stand still: its cells are copied from one frame into the others. Everything outside the
+    area keeps moving. This is the cure for a spot that flickers next to motion that is wanted."""
+    keys(step, {"op", "from", "frames", "rect", "points", "cells"}, "hold")
+    source = images[integer(step.get("from", 0), 0, len(images) - 1, "from")]
+    mask = area(step, source.shape[1], source.shape[0])
+    for index in targets(step, len(images)):
+        images[index] = images[index].copy()
+        images[index][mask] = source[mask]
+    return images
+
+
+OPS = {"cutout": cutout, "trim": trim, "outline": outline, "pad": pad, "flip": flip, "shift": shift, "replace": replace, "clean": clean,
+       "hold": hold}
 
 
 def apply(images, steps):

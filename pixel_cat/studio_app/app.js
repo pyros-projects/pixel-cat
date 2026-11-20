@@ -43,7 +43,7 @@ async function load(flash) {
   if (flash) { stage.classList.remove("flash"); void stage.offsetWidth; stage.classList.add("flash"); }
 }
 async function op(operation) {             // a change to the structure: send it, then take the result over
-  drop(); S.pending++;
+  drop(); if (S.proposal) endProposal(); S.pending++;
   try { const done = await send("/api/op", { op: operation }); S.known = Math.max(S.known, done.rev); await load(); return done; }
   catch (error) { fail(error); } finally { S.pending--; }
 }
@@ -103,6 +103,10 @@ function overlay() {
     ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
     for (const [colour, offset] of [["#000", 0], ["#fff", 4]]) { ctx.strokeStyle = colour; ctx.lineDashOffset = offset; ctx.strokeRect(X(box.x) + 0.5, Y(box.y) + 0.5, box.w * z, box.h * z); }
     ctx.setLineDash([]);
+  }
+  if (S.proposal) {                         // the cells of this frame that the proposed change would touch
+    ctx.strokeStyle = "#5ec4c8"; ctx.lineWidth = 1.5;
+    for (const [x, y] of S.proposal.marks[S.frame] || []) ctx.strokeRect(X(x) + 1.5, Y(y) + 1.5, z - 3, z - 3);
   }
   if (S.preview) {
     ctx.fillStyle = S.tool === "eraser" ? "rgba(255,255,255,0.35)" : S.colour;
@@ -352,6 +356,38 @@ function play() {
   step();
 }
 
+// ---------------------------------------------------------------- proposals: look before a change is made
+// A proposal shows which cells a change would touch, frame by frame, before anything is sent.
+function pixels(canvas) { return canvas ? canvas.getContext("2d").getImageData(0, 0, S.doc.width, S.doc.height).data : null; }
+function selectedCells() {                  // the cells of the selection, as [x, y] pairs
+  const out = []; if (!S.sel) return out;
+  for (let y = S.sel.y; y < S.sel.y + S.sel.h; y++) for (let x = S.sel.x; x < S.sel.x + S.sel.w; x++) if (!S.sel.mask || S.sel.mask[(y - S.sel.y) * S.sel.w + x - S.sel.x]) out.push([x, y]);
+  return out;
+}
+function propose(text, marks, apply) {       // marks: per frame, the cells that would change
+  S.proposal = { marks, apply };
+  const total = marks.reduce((n, cells) => n + cells.length, 0), frames = marks.filter(cells => cells.length).length;
+  $("proposalText").innerHTML = ""; $("proposalText").append(text + " ");
+  const b = document.createElement("b"); b.textContent = total ? `${total} cell${total > 1 ? "s" : ""} change in ${frames} frame${frames > 1 ? "s" : ""}.` : "Nothing would change."; $("proposalText").append(b, total ? " Step through the frames to see them." : "");
+  $("proposalApply").disabled = !total; $("proposal").hidden = false; overlay();
+}
+function endProposal() { S.proposal = null; $("proposal").hidden = true; overlay(); }
+$("proposalApply").onclick = async () => { const run = S.proposal.apply; endProposal(); await run(); };
+$("proposalCancel").onclick = endProposal;
+function proposeHold() {
+  drop();
+  if (!S.sel) return toast("Select the area that should stand still first (M)");
+  if (S.doc.frames.length < 2) return toast("There is only one frame");
+  const cells = selectedCells(), w = S.doc.width, from = S.frame, layer = S.layer, source = pixels(S.cels[layer][from]);
+  const marks = S.doc.frames.map((_, f) => {
+    if (f === from) return [];
+    const other = pixels(S.cels[layer][f]);
+    return cells.filter(([x, y]) => { const i = (y * w + x) * 4; for (let k = 0; k < 4; k++) if ((source ? source[i + k] : 0) !== (other ? other[i + k] : 0)) return true; return false; });
+  });
+  const where = S.sel.mask ? { cells } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] };
+  propose(`Hold the selection as it is in frame ${from + 1}, in all ${S.doc.frames.length} frames.`, marks, () => op({ op: "hold", layer, from, ...where }));
+}
+
 // ---------------------------------------------------------------- chat
 function showMessage(message) {
   const box = $("messages"), line = document.createElement("div"); line.className = "msg " + message.from;
@@ -409,7 +445,7 @@ $("duration").onchange = event => op({ op: "set-frame", frame: S.frame, duration
 $("durationAll").onclick = () => op({ op: "set-frame", frame: "all", duration: +$("duration").value });
 $("first").onclick = () => go(0, S.layer); $("lastFrame").onclick = () => go(S.doc.frames.length - 1, S.layer);
 $("prev").onclick = () => go((S.frame - 1 + S.doc.frames.length) % S.doc.frames.length, S.layer); $("next").onclick = () => go((S.frame + 1) % S.doc.frames.length, S.layer);
-$("play").onclick = play; $("onion").onchange = draw; $("grid").onchange = overlay;
+$("play").onclick = play; $("onion").onchange = draw; $("grid").onchange = overlay; $("hold").onclick = proposeHold;
 $("size").onclick = () => {
   const answer = prompt("Canvas size in cells, width x height", `${S.doc.width}x${S.doc.height}`); if (!answer) return;
   const [w, h] = answer.toLowerCase().split("x").map(n => parseInt(n, 10)); if (w && h) op({ op: "resize", width: w, height: h }).then(() => { fit(); chrome(); draw(); });
@@ -466,7 +502,7 @@ document.addEventListener("keydown", event => {
   if (key === " ") { event.preventDefault(); if (!event.repeat) { S.space = true; S.panned = false; } return; }
   const tool = TOOLS.find(t => t[2].toLowerCase() === key); if (tool) return setTool(tool[0]);
   if (key === "enter") return drop();
-  if (key === "escape") { if (S.float) { S.float = null; load(); } S.sel = null; return draw(); }
+  if (key === "escape") { if (S.proposal) return endProposal(); if (S.float) { S.float = null; load(); } S.sel = null; return draw(); }
   if (key === "delete" || key === "backspace") {
     if (S.float) { S.float = null; S.sel = null; draw(); return commit(); }
     if (S.sel && cel() && usable()) { cel().getContext("2d").clearRect(S.sel.x, S.sel.y, S.sel.w, S.sel.h); draw(); return commit(); }

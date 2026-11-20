@@ -16,6 +16,7 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 - **Timeline** at the bottom: one column per frame, one row per layer, each cel as a small picture. A click picks the frame and the layer at once. Space plays, Left and Right step through the frames, Up and Down through the layers. Onion skin shows the neighbouring frames faintly.
 - **Colour, layers and chat** on the right. Layers can be hidden, locked, renamed (double-click), faded, reordered and merged. The palette comes from the art with one click.
 - **Selections:** drag with the select tool, move with the move tool, Enter sets the moved piece down, Delete clears, Ctrl+C and Ctrl+V copy and paste, Escape lets go.
+- **Hold selection:** a spot that flickers next to motion you want to keep. Select it, go to the frame where it looks right, and press "hold selection". The studio first shows how many cells would change and marks them in every frame you step through; nothing happens until you press Apply.
 - **Import:** drop a picture, a GIF or a video on the canvas. It is converted first: to fit the canvas, the way pixel-cat recommends, or not at all. It lands on a new layer, after the last frame, or in place of the project.
 - **Export:** PNG of the frame, GIF, MP4, WebM, or the project file.
 - **Undo** (Ctrl+Z) and Redo cover everything, also what the agent did. The top bar names the last change and who made it.
@@ -61,6 +62,7 @@ Frames and layers are counted from 0; layer 0 is the bottom one. An operation th
 | `palette` | `colors` |
 | `palette-from-art` | |
 | `edits` | `layer`, `frames` (`"all"` or a list), `steps`: the [finishing steps](recipes.md#edits) that keep the size |
+| `hold` | `layer`, `from`, `frames`, and `rect`, `points` or `cells`: an area of one frame, copied into the others, so that it stands still |
 | `place` | `frames` (PNG images as base64), `name`, `frame`, `x`, `y`, `durations`: converted art as a new layer |
 | `resize` | `width`, `height`, and `x`, `y` to shift the art |
 

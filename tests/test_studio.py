@@ -75,6 +75,21 @@ class Projects(unittest.TestCase):
         self.assertEqual(len(p.frames), 2)
         self.assertEqual(p.summary()["layers"][0]["cels"], [True, True])
 
+    def test_an_area_of_one_frame_can_be_held_in_the_others(self):
+        p = self.project
+        for frame in range(3):
+            if frame:
+                p.apply({"op": "add-frame"})
+            p.apply({"op": "draw", "frame": frame, "color": ["#ff0000", "#00ff00", "#0000ff"][frame], "rect": [0, 0, 16, 12]})
+        note = p.apply({"op": "hold", "from": 1, "rect": [2, 2, 3, 3]})
+        self.assertEqual(note, "held 9 cells of frame 1 still, 18 cells changed")
+        for frame in range(3):
+            image = p.composite(frame)
+            self.assertEqual(tuple(image[3, 3]), (0, 255, 0, 255))
+            self.assertEqual(tuple(image[8, 8]), [(255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255)][frame])
+        p.apply({"op": "hold", "from": 0, "frames": [2], "cells": [[10, 10], [11, 10]]})
+        self.assertEqual((tuple(p.composite(2)[10, 10]), tuple(p.composite(1)[10, 10])), ((255, 0, 0, 255), (0, 255, 0, 255)))
+
     def test_a_project_survives_its_file_and_reads_like_any_json(self):
         p = self.project
         p.apply({"op": "draw", "color": "#123456", "rect": [1, 1, 3, 3]})

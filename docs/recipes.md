@@ -76,6 +76,7 @@ Finishing steps on the converted art, applied in order to every frame.
 | `shift` | moves the picture by whole cells and wraps around, for checking how a tile repeats | `x`, `y` |
 | `replace` | turns one color or a list of colors into another | `from`, `to`, `tolerance` |
 | `clean` | removes specks: small enclosed groups of cells join the color around them when the two look alike | `strength`: `gentle`, `balanced` or `strong` |
+| `hold` | makes an area of an animation stand still: its cells are copied from one frame into the others, and everything outside keeps moving | `from` (the frame to copy, default 0), `frames` (`"all"` or a list), and the area: `rect` `[x, y, width, height]`, `points` (a polygon) or `cells` (a list of `[x, y]`), all in cells |
 
 A step with a wrong setting stops the job and names itself: `Edit 2 (outline): color is a colour written as #RRGGBB`. In a recipe with both `edits` and `loop`, the edits come first.
 

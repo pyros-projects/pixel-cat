@@ -68,6 +68,7 @@ def parser():
     convert.add_argument("--cutout", action="store_true", help="make the background transparent")
     convert.add_argument("--trim", action="store_true", help="crop to the drawing")
     convert.add_argument("--outline", metavar="#RRGGBB", help="draw an outline around the drawing")
+    convert.add_argument("--hold", metavar="X,Y,W,H[@FRAME]", help="animations: make this area stand still, copied from a frame (the first by default)")
     convert.add_argument("--loop", help="animate a still: comma-separated kinds, e.g. clouds,water (areas are guessed)")
     convert.add_argument("--seconds", type=float, help="length of the loop")
     convert.add_argument("--sheet", help="split a sprite sheet into columns x rows, e.g. 4x2")
@@ -93,6 +94,9 @@ def convert_job(args):
     steps = ([{"op": "cutout"}] if args.cutout else []) + ([{"op": "trim"}] if args.trim else [])
     if args.outline:
         steps.append({"op": "outline", "color": args.outline})
+    if args.hold:
+        box, _, frame = args.hold.partition("@")
+        steps.append({"op": "hold", "rect": [int(v) for v in box.split(",")], "from": int(frame or 0)})
     if steps:
         job["edits"] = steps
     if args.loop:

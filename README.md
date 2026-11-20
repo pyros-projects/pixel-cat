@@ -135,7 +135,7 @@ The stills above came out of one command each, with no settings chosen by hand. 
 
 Reducing colors follows the crowd, so a small red scarf in a blue picture can turn blue. pixel-cat checks for that: a small area with a color of its own keeps a palette entry. `--symmetry left` or `right` mirrors one half onto the other. `--palette` takes `source`, one of the 18 names from `pixel-cat catalog`, or a comma-separated list of `#RRGGBB` colors.
 
-Animations convert frame by frame and share one palette. Still areas would flicker, because each frame rounds a little differently. A cell that barely changes over the whole loop is therefore held at one color (`--stability`, 0 switches it off), and real motion is left alone. `--frames` thins an animation out, `--speed` changes its pace, `--frame` exports a single frame as PNG.
+Animations convert frame by frame and share one palette. Still areas would flicker, because each frame rounds a little differently. A cell that barely changes over the whole loop is therefore held at one color (`--stability`, 0 switches it off), and real motion is left alone. When one spot flickers next to motion you want to keep, `--hold x,y,width,height` makes just that area stand still. `--frames` thins an animation out, `--speed` changes its pace, `--frame` exports a single frame as PNG.
 
 Converted art has hard edges: a cell is solid or empty. `--alpha soft` keeps the transparency of a shadow or a glow, and its colors still come from the palette, so a soft rim cannot smuggle colors past the limit. PNG and video outputs are enlarged to a size that is easy to look at. Pass `--scale 1` for one file pixel per cell.
 

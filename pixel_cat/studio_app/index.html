@@ -35,6 +35,7 @@
 <main id="stage">
   <canvas id="view"></canvas>
   <canvas id="over"></canvas>
+  <div id="proposal" class="proposal" hidden><span id="proposalText"></span><button id="proposalApply" class="primary">Apply</button><button id="proposalCancel">Cancel</button></div>
   <div id="hint" class="hint" hidden>Draw, drop a picture here, or ask the agent in the chat.</div>
   <div id="where" class="where"></div>
 </main>
@@ -73,6 +74,8 @@
     <span class="gap"></span>
     <button id="addFrame" title="New empty frame after this one">+ frame</button><button id="copyFrame" title="Duplicate this frame">duplicate</button>
     <button id="leftFrame" title="Move frame left">&larr;</button><button id="rightFrame" title="Move frame right">&rarr;</button><button id="delFrame" title="Delete frame">&times;</button>
+    <span class="gap"></span>
+    <button id="hold" title="Make the selected area stand still: its cells are copied from this frame into the others">hold selection</button>
   </div>
   <div id="timeline" class="timeline"></div>
 </footer>

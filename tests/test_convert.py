@@ -222,6 +222,37 @@ class Animations(Case):
         loose = self.run_job(**job, media={"stability": 0})
         self.assertEqual(loose["stabilized"], 0)
 
+    def blinkers(self):
+        """Two small rectangles that swap between the same two colours on every frame, in opposite phase."""
+        frames = []
+        for i in range(8):
+            image = np.zeros((32, 32, 3), dtype=np.uint8)
+            image[...] = (20, 30, 60)
+            image[10:16, 6:10] = (250, 220, 60) if i % 2 == 0 else (200, 60, 60)
+            image[10:16, 22:26] = (200, 60, 60) if i % 2 == 0 else (250, 220, 60)
+            frames.append(Image.fromarray(image))
+        frames[0].save(self.folder / "blink.gif", save_all=True, append_images=frames[1:], duration=100, loop=0)
+        return "blink.gif"
+
+    def test_one_area_is_held_still_and_its_neighbour_keeps_moving(self):
+        job = dict(input=self.blinkers(), convert={"mode": "grid", "grid": "native", "sampling": "exact", "colors": 3}, media={"stability": 0})
+        self.run_job(**job, export=["plain.gif"])
+        self.run_job(**job, edits=[{"op": "hold", "rect": [22, 10, 4, 6], "from": 0}], export=["held.gif"])
+        plain, held = [f for f, _ in self.frames_of("plain.gif")], [f for f, _ in self.frames_of("held.gif")]
+        right, left = np.stack([f[10:16, 22:26] for f in held]), np.stack([f[10:16, 6:10] for f in held])
+        self.assertTrue((right == right[0]).all())                  # the right one stands still
+        self.assertEqual(len({tuple(f[12, 7]) for f in held}), 2)   # the left one still shows both colours
+        changed = sum(int((a != b).any(axis=2).sum()) for a, b in zip(plain, held))
+        self.assertEqual(changed, 24 * 4)                           # exactly its 24 cells, in the four frames that differed
+        outside = np.ones((32, 32), dtype=bool)
+        outside[10:16, 22:26] = False
+        self.assertTrue(all((a[outside] == b[outside]).all() for a, b in zip(plain, held)))
+        # the same with a polygon and a chosen set of frames
+        self.run_job(**job, edits=[{"op": "hold", "points": [[22, 10], [26, 10], [26, 16], [22, 16]], "from": 1, "frames": [0, 1, 2, 3]}], export=["some.gif"])
+        some = [f for f, _ in self.frames_of("some.gif")]
+        self.assertTrue(all((some[i][10:16, 22:26] == some[1][10:16, 22:26]).all() for i in range(4)))
+        self.assertFalse((some[4][10:16, 22:26] == some[5][10:16, 22:26]).all())
+
     def test_frames_can_be_thinned_and_sped_up(self):
         result = self.run_job(input=self.gif(), media={"frames": 3, "speed": 200}, convert={"mode": "grid", "grid": 40}, export=["out.gif"])
         self.assertEqual((result["frames"], result["durations"]), (3, [80, 100, 140]))

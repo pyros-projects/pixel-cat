@@ -302,11 +302,28 @@ class Project:
             steps = op.get("steps", [])
             if any(isinstance(s, dict) and s.get("op") in ("trim", "pad") or (isinstance(s, dict) and s.get("op") == "outline" and s.get("grow", False)) for s in steps):
                 raise ValueError("trim, pad and a growing outline change the size; use resize for that")
+            if any(isinstance(s, dict) and s.get("op") == "hold" for s in steps):
+                raise ValueError("hold is an operation of its own in a project: {\"op\": \"hold\", ...}")
             steps = [dict(s, grow=False) if isinstance(s, dict) and s.get("op") == "outline" else s for s in steps]
             done = edits.apply([self.cel(layer, f).copy() for f in targets], steps)
             for frame, image in zip(targets, done):
                 self.put(layer, frame, image)
             return f"applied {len(steps)} step{'s' if len(steps) != 1 else ''} to layer {layer}"
+        if kind == "hold":
+            # an area of one frame, copied into the others on the same layer: the area stands still
+            keys(op, {"op", "layer", "from", "frames", "rect", "points", "cells"}, "hold")
+            layer = self._at(op, "layer", layers)
+            if self.layers[layer]["locked"]:
+                raise ValueError(f"Layer {layer} is locked")
+            source = self.cel(layer, integer(op.get("from", 0), 0, frames - 1, "from"))
+            mask = edits.area(op, self.width, self.height)
+            changed = 0
+            for frame in edits.targets(op, frames):
+                image = self.cel(layer, frame).copy()
+                changed += int((image[mask] != source[mask]).any(axis=1).sum())
+                image[mask] = source[mask]
+                self.put(layer, frame, image)
+            return f"held {int(mask.sum())} cells of frame {op.get('from', 0)} still, {changed} cells changed"
         if kind == "place":
             # converted frames as a new layer, starting at a frame; the project grows by frames as needed
             images = [from_png(base64.b64decode(p)) for p in op["frames"]]
@@ -356,4 +373,4 @@ class Project:
 
 
 OPERATIONS = ["draw", "clear", "set-cel", "add-layer", "remove-layer", "move-layer", "set-layer", "merge-down", "add-frame",
-              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "place", "resize"]
+              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "place", "resize"]
