@@ -1,6 +1,6 @@
 [project]
 name = "pixel-cat"
-version = "0.6.3"
+version = "0.6.4"
 description = "Turn images, GIFs, videos and sprite sheets into pixel art from the command line"
 readme = "README.md"
 license = "MIT"
