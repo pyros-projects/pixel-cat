@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import signal
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from .jobs import execute
 from .loops import KINDS
 from .options import MODES, OPTIONS, SAMPLING
 from .palettes import PALETTES
+from .project import OPERATIONS
 
 
 def grid_value(value):
@@ -26,6 +28,24 @@ def parser():
     cmds.add_parser("catalog", help="list palettes, modes and recipe options")
     run = cmds.add_parser("run", help="execute a JSON recipe, or read it from stdin with -")
     run.add_argument("recipe")
+    studio = cmds.add_parser("studio", help="open a project in the studio: draw and animate in the browser, alone or with an agent")
+    studio.add_argument("project", help="a .pixelcat file; it is created if it does not exist")
+    studio.add_argument("--size", default="64x64", help="canvas of a new project, e.g. 32x32")
+    studio.add_argument("--port", type=int, default=4178)
+    studio.add_argument("--agent", action="store_true", help="an agent answers in the chat (it runs `pixel-cat wait`)")
+    studio.add_argument("--open", action="store_true", help="open the page in the default browser")
+    wait = cmds.add_parser("wait", help="for agents: block until the person writes in the studio's chat")
+    wait.add_argument("--timeout", type=int, default=3300, help="seconds before giving up")
+    say = cmds.add_parser("say", help="for agents: answer in the studio's chat (- reads the text from stdin)")
+    say.add_argument("text")
+    op = cmds.add_parser("op", help="for agents: change the open project with one operation as JSON (- reads stdin)")
+    op.add_argument("operation")
+    look = cmds.add_parser("look", help="for agents: see what the person has open; -o saves the frame as PNG")
+    look.add_argument("-o", "--output")
+    look.add_argument("--frame", type=int)
+    look.add_argument("--layer", type=int)
+    look.add_argument("--scale", type=int, default=8)
+    cmds.add_parser("undo", help="for agents: take back the last change in the studio")
     convert = cmds.add_parser("convert", help="convert a still, GIF, video or sprite sheet")
     convert.add_argument("input")
     convert.add_argument("-o", "--output", required=True, help="a PNG, GIF, MP4 or WebM file")
@@ -94,19 +114,77 @@ def catalog():
         "modes": {mode: sorted(options) for mode, options in OPTIONS.items()},
         "sampling": list(SAMPLING),
         "inputs": ["png, jpg, webp and other stills", "gif", "video (needs FFmpeg)", "sprite sheet"],
-        "outputs": ["png", "gif", "mp4", "webm"],
+        "outputs": ["png", "gif", "mp4", "webm", "pixelcat (a project with layers and frames)"],
         "recipe": {"input": "path", "convert": "mode and its settings", "media": "frames, speed, stability",
                    "sheet": "columns, rows, delay", "edits": "steps, each with an op",
                    "loop": "seconds, fps, seed, regions (kind, area, amount)",
                    "export": "a path, or objects with path, scale, frame, format"},
         "edits": list(OPS),
+        "project operations": OPERATIONS,
         "loop kinds": list(KINDS),
     }
+
+
+def run_studio(args):
+    import webbrowser
+
+    from . import studio
+
+    width, height = (int(n) for n in args.size.lower().split("x"))
+    server, room = studio.serve(args.project, args.port, args.agent, (width, height))
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    studio.STATE.parent.mkdir(parents=True, exist_ok=True)
+    studio.STATE.write_text(json.dumps({"url": url, "project": str(room.path)}))
+    print(json.dumps({"studio": "started", "url": url, "project": str(room.path), "agent": args.agent}), flush=True)
+    if args.open:
+        webbrowser.open(url)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))        # so that the note about the running studio is removed
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        studio.STATE.unlink(missing_ok=True)
+
+
+def agent_command(args):
+    """The commands an agent uses to work in a running studio."""
+    import time
+
+    from . import studio
+
+    if args.command == "wait":
+        deadline = time.time() + args.timeout
+        while time.time() < deadline:
+            reply = studio.call("/api/wait?slice=25", timeout=40)
+            if reply["messages"]:
+                return "\n".join(studio.describe(m, reply["project"]) for m in reply["messages"])
+        return "Nobody wrote for a while. Run `pixel-cat wait` again to keep listening."
+    if args.command == "say":
+        studio.call("/api/say", {"text": sys.stdin.read() if args.text == "-" else args.text})
+        return None
+    if args.command == "op":
+        return json.dumps(studio.call("/api/op", {"op": json.loads(sys.stdin.read() if args.operation == "-" else args.operation), "by": "agent"}))
+    if args.command == "undo":
+        return json.dumps(studio.call("/api/undo", {"by": "agent"}))
+    seen = studio.call("/api/look?as=json")
+    if args.output:
+        query = f"/api/look?scale={args.scale}" + (f"&frame={args.frame}" if args.frame is not None else "") + (f"&layer={args.layer}" if args.layer is not None else "")
+        Path(args.output).write_bytes(studio.call(query, raw=True))
+        seen["saved"] = str(Path(args.output).resolve())
+    return json.dumps(seen)
 
 
 def main():
     args = parser().parse_args()
     try:
+        if args.command == "studio":
+            return run_studio(args)
+        if args.command in ("wait", "say", "op", "look", "undo"):
+            text = agent_command(args)
+            if text:
+                print(text)
+            return
         if args.command == "catalog":
             result = catalog()
         elif args.command == "convert":

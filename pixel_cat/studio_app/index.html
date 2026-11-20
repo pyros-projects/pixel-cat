@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pixel-cat studio</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="mark" aria-hidden="true"></span><b>pixel-cat</b><span id="name" class="name"></span><button id="size" class="quiet" title="Change the canvas size"></button></div>
+  <div class="bar">
+    <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    <span id="last" class="last"></span>
+  </div>
+  <div class="bar right">
+    <span id="zoom" class="quiet"></span>
+    <button id="import">Import</button>
+    <div class="menu"><button id="export">Export</button>
+      <div class="drop" id="exportMenu" hidden>
+        <label>Size <select id="exportScale"><option>1</option><option>2</option><option>4</option><option selected>8</option><option>16</option></select>&times;</label>
+        <button data-format="png">PNG, this frame</button>
+        <button data-format="gif">GIF, all frames</button>
+        <button data-format="mp4">MP4</button>
+        <button data-format="webm">WebM</button>
+        <button data-format="project">Project file</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav id="tools" aria-label="Tools"></nav>
+
+<main id="stage">
+  <canvas id="view"></canvas>
+  <canvas id="over"></canvas>
+  <div id="hint" class="hint" hidden>Draw, drop a picture here, or ask the agent in the chat.</div>
+  <div id="where" class="where"></div>
+</main>
+
+<aside>
+  <section class="colours">
+    <h2>Colour</h2>
+    <div class="current"><input type="color" id="colour" value="#f2a65a" title="Current colour"><code id="hex">#f2a65a</code>
+      <button id="addColour" class="quiet" title="Add this colour to the palette">+ palette</button>
+      <button id="fromArt" class="quiet" title="Take the palette from the art">from art</button></div>
+    <div id="palette" class="palette"></div>
+  </section>
+  <section class="layers">
+    <h2>Layers <span class="acts">
+      <button id="addLayer" title="New layer">+</button><button id="upLayer" title="Move up">&#9650;</button><button id="downLayer" title="Move down">&#9660;</button><button id="mergeLayer" title="Merge into the layer below">&#10515;</button><button id="delLayer" title="Delete layer">&times;</button></span></h2>
+    <div id="layerList"></div>
+  </section>
+  <section class="chat">
+    <h2>Agent <span id="agent" class="status"></span></h2>
+    <div id="messages" class="messages"></div>
+    <div id="context" class="context"></div>
+    <form id="composer"><textarea id="say" rows="2" placeholder="Ask for a change, or ask what it sees"></textarea><button title="Send (Enter)">Send</button></form>
+  </section>
+</aside>
+
+<footer>
+  <div class="transport">
+    <button id="first" title="First frame">&#9198;</button><button id="prev" title="Previous frame (Left)">&#9664;</button>
+    <button id="play" title="Play (Space)" class="primary">&#9654;</button>
+    <button id="next" title="Next frame (Right)">&#9654;</button><button id="lastFrame" title="Last frame">&#9197;</button>
+    <label class="check"><input type="checkbox" id="onion"> onion skin</label>
+    <label class="check"><input type="checkbox" id="grid" checked> grid</label>
+    <span class="gap"></span>
+    <label>frame <b id="frameNo"></b> lasts <input id="duration" type="number" min="10" max="60000" step="10"> ms</label>
+    <button id="durationAll" class="quiet" title="Give every frame this duration">all</button>
+    <span class="gap"></span>
+    <button id="addFrame" title="New empty frame after this one">+ frame</button><button id="copyFrame" title="Duplicate this frame">duplicate</button>
+    <button id="leftFrame" title="Move frame left">&larr;</button><button id="rightFrame" title="Move frame right">&rarr;</button><button id="delFrame" title="Delete frame">&times;</button>
+  </div>
+  <div id="timeline" class="timeline"></div>
+</footer>
+
+<dialog id="importDialog">
+  <form method="dialog">
+    <h3>Bring in a picture, GIF or video</h3>
+    <p id="importName" class="quiet"></p>
+    <label>Put it <select id="importHow"><option value="layer">on a new layer</option><option value="frames">after the last frame</option><option value="project">in place of this project</option></select></label>
+    <label>Convert <select id="importMode"><option value="fit">to fit this canvas</option><option value="recommended">as pixel-cat recommends</option><option value="native">not at all (it is pixel art already)</option></select></label>
+    <label>Colours <input id="importColours" type="number" min="2" max="256" value="24"></label>
+    <label>Cells get <select id="importSampling"><option value="crisp">their dominant colour</option><option value="ink">their dominant colour, outlines kept</option><option value="area">the average of their area</option><option value="exact">the pixel under their centre</option></select></label>
+    <label class="check"><input type="checkbox" id="importCutout"> make the background transparent</label>
+    <menu><button value="cancel">Cancel</button><button id="importGo" value="go" class="primary">Bring in</button></menu>
+  </form>
+</dialog>
+<input type="file" id="file" accept="image/*,video/*" hidden>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

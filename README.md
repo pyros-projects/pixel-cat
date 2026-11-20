@@ -12,7 +12,7 @@
 
 [![License: MIT][license-shield]][license-url]
 [![Python 3.11+][python-shield]][python-url]
-[![Version 0.2.0][version-shield]][version-url]
+[![Version 0.3.0][version-shield]][version-url]
 [![Exports PNG, GIF, MP4, WebM][exports-shield]][exports-url]
 [![npx skills add pyros-projects/pixel-cat][skill-shield]][skill-url]
 [![Runs offline][offline-shield]][offline-url]
@@ -22,6 +22,7 @@
 <div align="center">
   <a href="#install-as-an-agent-skill">Install as a skill</a> &middot;
   <a href="#start">Quick Start</a> &middot;
+  <a href="#studio">Studio</a> &middot;
   <a href="#use-from-an-agent">Use from an agent</a> &middot;
   <a href="#make-a-film">Make a film</a> &middot;
   <a href="docs/recipes.md">Recipes</a> &middot;
@@ -68,6 +69,7 @@ npx skills add pyros-projects/pixel-cat -g -s pixel-cat
 - “Turn ~/Pictures/cat.jpg into a 64-color pixel sprite.”
 - “Make this screen recording a pixel-art GIF with 16 colors.”
 - “Make a looping pixel GIF of this landscape with drifting clouds and moving water.”
+- “Open this sprite in the studio and help me animate a blink.”
 - “Make a 15-second pixel-art film about a lighthouse keeper winding a clockwork sun.”
 
 On first use the skill clones this repository into `~/.local/share/pixel-cat/app` (on Windows, `%LOCALAPPDATA%\pixel-cat\app`), creates its Python environment and remembers the folder. Your images and films stay in your own folders. The install needs git and uv. FFmpeg is needed for video input, MP4, WebM and films. Say “update pixel-cat” to pull a new version.
@@ -82,6 +84,20 @@ uv sync --locked
 uv run pixel-cat convert examples/images/lake.png -o output/lake.png
 uv run pixel-cat convert examples/images/bob.gif -o output/bob.gif --scale 3
 ```
+
+## Studio
+
+<div align="center">
+
+![The studio: a canvas, tools, a timeline with one row per layer, and a chat in which an agent has just drawn a face on the moon](media/studio.png)
+
+</div>
+
+```sh
+uv run pixel-cat studio sprite.pixelcat --open
+```
+
+The studio is a page on your own machine for drawing and animating. The timeline shows every layer in every frame, so one click picks both. Drop a picture on the canvas and it comes in converted. With `--agent`, the chat is wired to the agent that started it: it sees the frame, the layer and the selection you have open, draws into the same project while you watch, and one Undo takes its changes back. Projects are plain `.pixelcat` files that `convert` reads and writes too. [Studio guide](docs/studio.md)
 
 ## Use from an agent
 
@@ -173,7 +189,7 @@ uv run python .agents/skills/pixel-cat-film/scripts/render.py \
 uv run python -m unittest discover -s tests -v
 ```
 
-The tests build their own inputs and check what a conversion promises: the grid size, the color limit, palette membership, kept outlines, restored pixel grids, mirrored halves, steady still areas in a loop, and the frame counts and timings of GIF, sprite-sheet and video jobs, loops that close without a jump, and the film camera.
+The tests build their own inputs and check what a conversion promises: the grid size, the color limit, palette membership, kept outlines, restored pixel grids, mirrored halves, steady still areas in a loop, and the frame counts and timings of GIF, sprite-sheet and video jobs, loops that close without a jump, the film camera, lifted props, project files and the studio's server.
 
 ## License
 
@@ -183,7 +199,7 @@ The tests build their own inputs and check what a conversion promises: the grid 
 [license-url]: LICENSE
 [python-shield]: https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white
 [python-url]: pyproject.toml
-[version-shield]: https://img.shields.io/badge/version-0.2.0-6b5fb5?style=flat-square
+[version-shield]: https://img.shields.io/badge/version-0.3.0-6b5fb5?style=flat-square
 [version-url]: pyproject.toml
 [exports-shield]: https://img.shields.io/badge/exports-PNG%20%C2%B7%20GIF%20%C2%B7%20MP4%20%C2%B7%20WebM-c9682c?style=flat-square
 [exports-url]: docs/recipes.md

@@ -1,6 +1,6 @@
 ---
 name: pixel-cat
-description: Turn an image, GIF, video or sprite sheet into pixel art, or make a short pixel-art film with sound. Use when the user asks to pixelate a picture, make a sprite, a sprite sheet or a pixel-art GIF, reduce an image to a palette, or make a pixel-art cutscene or short film. On first use it installs pixel-cat (a git checkout with its own uv environment).
+description: Turn an image, GIF, video or sprite sheet into pixel art, draw and animate it together with the user in a local studio, or make a short pixel-art film with sound. Use when the user asks to pixelate a picture, make a sprite, a sprite sheet or a pixel-art GIF, reduce an image to a palette, edit or animate pixel art, or make a pixel-art cutscene or short film. On first use it installs pixel-cat (a git checkout with its own uv environment).
 ---
 
 # pixel-cat
@@ -67,7 +67,38 @@ with a nonzero exit.
 - Look at what you made before you hand it over. A PNG at `--scale 1` has one
   pixel per cell; the default scale is easier to judge by eye.
 
-## 3. Make a film
+## 3. Draw and animate together in the studio
+
+When the user wants to draw, touch up or animate by hand, or wants you to do
+it while they watch, open the studio. Its chat is wired to this session.
+
+1. Start it **in the background** and give the user the address it prints:
+
+   ```bash
+   uv run --project <home> pixel-cat studio /abs/sprite.pixelcat --agent
+   ```
+
+   A missing project is created (`--size 32x32`). To start from a picture,
+   convert it first: `pixel-cat convert in.png -o /abs/sprite.pixelcat`.
+2. Listen: run `uv run --project <home> pixel-cat wait` **in the background**
+   and end your turn. It blocks until the user writes in the chat, prints
+   lines like `YOU [sprite.pixelcat, frame 2, layer 1 "Ink", selection x 4 y 6,
+   12 by 8, colour #f2a65a]: make the outline darker here`, and exits, which
+   wakes you. Frames and layers count from 0.
+3. Look before you change anything: `pixel-cat look -o /tmp/frame.png` saves
+   the frame the user is on, enlarged, and prints the project's shape. Open
+   the picture.
+4. Change the project with `pixel-cat op '<json>'`, one operation at a time
+   (`draw`, `add-layer`, `add-frame`, `edits`, ...; the list and the settings
+   are in `<home>/docs/studio.md`). The user sees each change as it happens
+   and can take all of them back with one Undo. Prefer a new layer for
+   anything they might not want. Look again when you are done.
+5. Answer in the chat, not in the terminal: `pixel-cat say "..."`. Keep it
+   short: what you did, on which layer and frames.
+6. Run `wait` again before you end the turn. Without it the page shows you as
+   away and the user talks to nobody.
+
+## 4. Make a film
 
 Read `<home>/.agents/skills/pixel-cat-film/SKILL.md` and follow it, with two
 changes:

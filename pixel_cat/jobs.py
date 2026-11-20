@@ -9,20 +9,25 @@ import numpy as np
 from . import edits, frames, loops, recommend, stills
 from .options import conversion, integer, keys
 from .palettes import PALETTES
+from .project import SUFFIX, Project
 
-FORMATS = {".png": "png", ".gif": "gif", ".mp4": "mp4", ".webm": "webm"}
+FORMATS = {".png": "png", ".gif": "gif", ".mp4": "mp4", ".webm": "webm", SUFFIX: "project"}
 
 
-def execute(job, base):
+def convert(job, base):
+    """Everything up to the finished frames. Returns (input path, images, durations, display scale, summary)."""
     keys(job, {"input", "convert", "media", "sheet", "edits", "loop", "export"}, "recipe")
     path = (Path(base) / job["input"]).resolve(strict=True)
+    is_project = path.suffix.lower() == SUFFIX
+    if is_project and ("convert" in job or "media" in job or "sheet" in job):
+        raise ValueError("A project already is pixel art. It takes edits, a loop and exports, no conversion.")
     settings = conversion(job.get("convert", {}))
     media, sheet = job.get("media", {}), job.get("sheet")
     keys(media, {"frames", "speed", "stability"}, "media")
     if media.get("frames", "all") != "all":
         integer(media["frames"], 1, frames.MAX_FRAMES, "frames")
     speed = integer(media.get("speed", 100), 25, 300, "speed")
-    animated = frames.kind(path) != "still"
+    animated = not is_project and frames.kind(path) != "still"
     if sheet is not None:
         keys(sheet, {"columns", "rows", "delay"}, "sheet")
         for name in ("columns", "rows"):
@@ -52,6 +57,54 @@ def execute(job, base):
             if not 0 < region.get("amount", 1) <= 8:
                 raise ValueError("A region's amount is a number up to 8")
 
+    summary = {"input": str(path)}
+    if is_project:
+        images, durations = Project.load(path).animation()
+    else:
+        count = media.get("frames", "all" if frames.kind(path) == "gif" else frames.VIDEO_FRAMES)
+        source, durations = frames.read(path, count, sheet)
+        durations = [max(10, round(d * 100 / speed)) for d in durations]
+        moving = len(source) > 1
+        settle = lambda images: frames.stabilise(images, durations, integer(media.get("stability", 24), 0, 255, "stability"))  # noqa: E731
+        if settings["mode"] == "recommended":
+            chosen = recommend.plan(source, settings["contrast"])
+            images = [recommend.sample(image, chosen) for image in source]
+            if moving:
+                summary["stabilized"] = settle(images)
+            images = recommend.finish(images, chosen, durations)
+            summary["recommendation"] = {k: chosen[k] for k in ("width", "height", "sampling", "colors", "cleanup", "contrast")}
+        else:
+            images = [stills.sample(image, settings) for image in source]
+            if moving and settings["mode"] == "grid":
+                summary["stabilized"] = settle(images)
+            stills.finish(images, settings, stills.theme(settings, PALETTES), durations)
+    if job.get("edits"):
+        images = edits.apply(images, job["edits"])
+    if loop is not None:
+        if len(images) > 1:
+            raise ValueError("A loop is made from a single frame")
+        images, durations = loops.animate(images[0], loop)
+    height, width = images[0].shape[:2]
+    display = max(1, min(24, 640 // max(width, height))) if is_project else stills.display_scale(settings, width, height)
+    colours = {int(c) for image in images for c in np.unique(stills.codes(image[..., :3][image[..., 3] >= 128]))}
+    summary.update(width=width, height=height, frames=len(images), durations=durations, colors=len(colours), displayScale=display)
+    return path, images, durations, display, summary
+
+
+def write(images, durations, target, fmt, scale):
+    """Write one output file. PNG takes a single image in `images`."""
+    if fmt == "png":
+        frames.write_png(images[0], target, scale)
+    elif fmt == "gif":
+        frames.write_gif(images, durations, target, scale)
+    elif fmt == "project":
+        Project.from_frames(images, durations).save(target)
+    else:
+        frames.write_video(images, durations, target, scale, fmt)
+
+
+def execute(job, base):
+    path = (Path(base) / job.get("input", "")).resolve()
     outputs = job.get("export", [])
     exports = []
     for item in [outputs] if isinstance(outputs, (dict, str)) else outputs:
@@ -64,60 +117,34 @@ def execute(job, base):
             raise ValueError(f"Output must be a file: {target}")
         item["format"] = item.get("format", FORMATS.get(target.suffix.lower()))
         if item["format"] not in FORMATS.values():
-            raise ValueError(f"Unknown output format for {target.name}. Use PNG, GIF, MP4 or WebM.")
+            raise ValueError(f"Unknown output format for {target.name}. Use PNG, GIF, MP4, WebM or a {SUFFIX} project.")
         if "frame" in item and item["format"] != "png":
             raise ValueError("frame picks a single PNG out of an animation")
+        if "scale" in item and item["format"] == "project":
+            raise ValueError("A project keeps one cell per pixel; scale applies to pictures and videos")
         if item.get("scale", "display") != "display":
             integer(item["scale"], 1, 64, "scale")
         exports.append((target, item))
     if not exports:
         raise ValueError("A recipe needs at least one export")
 
-    count = media.get("frames", "all" if frames.kind(path) == "gif" else frames.VIDEO_FRAMES)
-    source, durations = frames.read(path, count, sheet)
-    durations = [max(10, round(d * 100 / speed)) for d in durations]
-    moving = len(source) > 1
-    summary = {"input": str(path)}
-    settle = lambda images: frames.stabilise(images, durations, integer(media.get("stability", 24), 0, 255, "stability"))  # noqa: E731
-    if settings["mode"] == "recommended":
-        chosen = recommend.plan(source, settings["contrast"])
-        images = [recommend.sample(image, chosen) for image in source]
-        if moving:
-            summary["stabilized"] = settle(images)
-        images = recommend.finish(images, chosen, durations)
-        summary["recommendation"] = {k: chosen[k] for k in ("width", "height", "sampling", "colors", "cleanup", "contrast")}
-    else:
-        images = [stills.sample(image, settings) for image in source]
-        if moving and settings["mode"] == "grid":
-            summary["stabilized"] = settle(images)
-        stills.finish(images, settings, stills.theme(settings, PALETTES), durations)
-    if job.get("edits"):
-        images = edits.apply(images, job["edits"])
-    if loop is not None:
-        images, durations = loops.animate(images[0], loop)
+    path, images, durations, display, summary = convert(job, base)
     height, width = images[0].shape[:2]
-    display = stills.display_scale(settings, width, height)
-    colours = {int(c) for image in images for c in np.unique(stills.codes(image[..., :3][image[..., 3] >= 128]))}
-    summary.update(width=width, height=height, frames=len(images), durations=durations, colors=len(colours),
-                   displayScale=display, outputs=[])
-
+    summary["outputs"] = []
     staged = []
     try:
         for target, item in exports:
             fmt = item["format"]
-            scale = item.get("scale", "display" if fmt != "gif" else 1)
+            scale = 1 if fmt == "project" else item.get("scale", "display" if fmt != "gif" else 1)
             scale = display if scale == "display" else scale
             target.parent.mkdir(parents=True, exist_ok=True)
             with NamedTemporaryFile(dir=target.parent, delete=False, suffix=target.suffix) as handle:
                 temp = Path(handle.name)
             staged.append((temp, target))
             if fmt == "png":
-                index = integer(item.get("frame", 0), 0, len(images) - 1, "frame")
-                frames.write_png(images[index], temp, scale)
-            elif fmt == "gif":
-                frames.write_gif(images, durations, temp, scale)
+                write([images[integer(item.get("frame", 0), 0, len(images) - 1, "frame")]], durations, temp, fmt, scale)
             else:
-                frames.write_video(images, durations, temp, scale, fmt)
+                write(images, durations, temp, fmt, scale)
             summary["outputs"].append({"path": str(target), "format": fmt, "bytes": temp.stat().st_size,
                                        "width": width * scale, "height": height * scale,
                                        "frames": 1 if fmt == "png" else len(images)})
