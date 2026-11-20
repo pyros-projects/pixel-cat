@@ -337,7 +337,16 @@ class Project:
         if kind == "set-cel":
             layer, frame = self._at(op, "layer", layers), self._at(op, "frame", frames)
             before = self.cel(layer, frame)
-            self.put(layer, frame, from_png(base64.b64decode(op["png"]), (self.width, self.height)))
+            image = from_png(base64.b64decode(op["png"]), (self.width, self.height))
+            # A browser canvas holds a partly see-through cell only roughly: the fainter the cell, the coarser
+            # its colour comes back. Where such a cell returns with its alpha and with a colour inside that
+            # error, nobody drew on it, and it keeps the colour it had.
+            alpha = before[..., 3].astype(np.int64)
+            slack = np.floor(127.5 / np.maximum(alpha, 1) + 0.5) + 1
+            near = (np.abs(image[..., :3].astype(np.int64) - before[..., :3]) <= slack[..., None]).all(axis=2)
+            same = (alpha > 0) & (alpha < 255) & (image[..., 3] == alpha) & near
+            image[same] = before[same]
+            self.put(layer, frame, image)
             spread = op.get("spread")
             if not spread:
                 return f"drew on layer {layer}, frame {frame}"

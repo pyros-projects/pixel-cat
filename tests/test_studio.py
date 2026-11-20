@@ -145,6 +145,26 @@ class Projects(unittest.TestCase):
         p.apply({"op": "append", "project": self.shot("Room", "#2850dc", opacity=0.5).to_json()})
         self.assertEqual((len(p.layers), len(p.frames)), (1, 2))
 
+    def test_a_stroke_from_the_page_leaves_soft_cells_as_they_were(self):
+        rng = np.random.default_rng(8)
+        soft = np.zeros((12, 16, 4), dtype=np.uint8)
+        soft[2:10, 2:14, :3] = rng.integers(0, 256, (8, 12, 3))
+        soft[2:10, 2:14, 3] = rng.integers(1, 255, (8, 12))          # partly see-through, from barely there to nearly solid
+        p = Project.from_frames([soft], [100])
+        # what a browser canvas hands back: colour times alpha, rounded, and divided again
+        alpha = soft[..., 3:4].astype(np.float64)
+        back = soft.copy()
+        back[..., :3] = np.where(alpha > 0, np.rint(np.rint(soft[..., :3] * alpha / 255) * 255 / np.maximum(alpha, 1)), 0)
+        self.assertGreater(int((back != soft).any(axis=2).sum()), 40)                      # the canvas lost colour in many cells
+        back[0, 0] = (255, 0, 0, 255)                                # the stroke: one cell drawn ...
+        back[5, 5] = (10, 250, 10, soft[5, 5, 3])                    # ... and one soft cell given quite another colour
+        back[6, 6, 3] = 255 - soft[6, 6, 3]                          # ... and one given another strength
+        p.apply({"op": "set-cel", "layer": 0, "frame": 0, "png": base64.b64encode(png_bytes(back)).decode()})
+        now = p.cel(0, 0)
+        changed = {(int(y), int(x)) for y, x in np.argwhere((now != soft).any(axis=2))}
+        self.assertEqual(changed, {(0, 0), (5, 5), (6, 6)})          # only what was drawn
+        self.assertTrue((now[0, 0] == (255, 0, 0, 255)).all() and (now[5, 5] == back[5, 5]).all() and now[6, 6, 3] == back[6, 6, 3])
+
     def test_an_area_of_one_frame_can_be_held_in_the_others(self):
         p = self.project
         for frame in range(3):
