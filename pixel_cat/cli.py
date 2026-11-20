@@ -213,7 +213,10 @@ def agent_command(args):
         studio.call("/api/say", {"text": sys.stdin.read() if args.text == "-" else args.text})
         return None
     if args.command == "op":
-        return json.dumps(studio.call("/api/op", {"op": json.loads(sys.stdin.read() if args.operation == "-" else args.operation), "by": "agent"}))
+        operation = json.loads(sys.stdin.read() if args.operation == "-" else args.operation)
+        if isinstance(operation, dict) and operation.get("op") == "append" and "file" in operation:    # a project named by its path
+            operation = {"op": "append", "project": json.loads(Path(operation["file"]).expanduser().read_text())}
+        return json.dumps(studio.call("/api/op", {"op": operation, "by": "agent"}))
     if args.command == "undo":
         return json.dumps(studio.call("/api/undo", {"by": "agent"}))
     seen = studio.call("/api/look?as=json")

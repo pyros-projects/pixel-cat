@@ -64,17 +64,25 @@ def cutout(images, step):
 
 
 def outline(images, step):
-    """Draw a one-cell outline around everything opaque. The picture grows by one cell on each side so the
-    outline has room, unless `grow` is false."""
-    keys(step, {"op", "color", "corners", "grow"}, "outline")
-    colour = rgb(step.get("color", "#000000"))
+    """Draw an outline around everything opaque, `width` cells thick (1 to 3). The picture grows by that many
+    cells on each side so the outline has room, unless `grow` is false. With `inside`, the outermost cells
+    of the drawing take the colour instead and nothing grows."""
+    keys(step, {"op", "color", "corners", "grow", "width", "inside"}, "outline")
+    colour, width = rgb(step.get("color", "#000000")), integer(step.get("width", 1), 1, 3, "width")
+    corners, inside = bool(step.get("corners", False)), bool(step.get("inside", False))
     out = []
     for image in images:
-        if step.get("grow", True):
-            image = np.pad(image, ((1, 1), (1, 1), (0, 0)))
+        if step.get("grow", True) and not inside:
+            image = np.pad(image, ((width, width), (width, width), (0, 0)))
         solid = image[..., 3] >= 128
-        edge = _neighbours(solid, bool(step.get("corners", False))) & ~solid
-        image[edge] = colour + [255]
+        for _ in range(width):
+            if inside:                                                # what touches emptiness, or the picture's border
+                edge = solid & _neighbours(np.pad(~solid, 1, constant_values=True), corners)[1:-1, 1:-1]
+                solid = solid & ~edge
+            else:
+                edge = _neighbours(solid, corners) & ~solid
+                solid = solid | edge
+            image[edge] = colour + [255]
         out.append(image)
     return out
 
@@ -188,9 +196,11 @@ def targets(step, count, name="frames"):
 def hold(images, step):
     """Make an area stand still: its cells are copied from one frame into the others. Everything outside the
     area keeps moving. This is the cure for a spot that flickers next to motion that is wanted."""
-    keys(step, {"op", "from", "frames", "rect", "points", "cells"}, "hold")
+    keys(step, {"op", "from", "frames", "rect", "points", "cells", "outside"}, "hold")
     source = images[integer(step.get("from", 0), 0, len(images) - 1, "from")]
     mask = area(step, source.shape[1], source.shape[0])
+    if step.get("outside"):                                 # the other way round: only the area keeps moving
+        mask = ~mask
     for index in targets(step, len(images)):
         images[index] = images[index].copy()
         images[index][mask] = source[mask]
@@ -246,10 +256,61 @@ def fringe(images, step):
     return out
 
 
+def smooth(images, step):
+    """Take single-cell bumps off an edge and fill single-cell dents in it. `what` is the silhouette (the
+    border between drawing and emptiness) or the lines (dark cells, or cells near `color`). A bump sits alone
+    on a straight run; a dent is one cell deep with a straight run on both sides. Tips of thin lines and gaps
+    more than one cell deep stay."""
+    from . import lines
+
+    keys(step, {"op", "what", "color", "tolerance", "width", "passes"}, "smooth")
+    what = step.get("what", "silhouette")
+    if what not in ("silhouette", "lines"):
+        raise ValueError("what is silhouette or lines")
+    colour = rgb(step["color"]) if step.get("color") else None
+    tolerance, width = integer(step.get("tolerance", 28), 0, 180, "tolerance"), integer(step.get("width", 4), 2, 8, "width")
+    passes = integer(step.get("passes", 1), 1, 4, "passes")
+
+    def at(mask, dy, dx):
+        return lines._shift(mask, dy, dx)
+
+    out = []
+    for image in images:
+        image = image.copy()
+        for _ in range(passes):
+            inked = image[..., 3] >= 128 if what == "silhouette" else lines.find(image, colour, tolerance, width)
+            up, down, left, right = at(inked, 1, 0), at(inked, -1, 0), at(inked, 0, 1), at(inked, 0, -1)
+            ul, ur, dl, dr = at(inked, 1, 1), at(inked, 1, -1), at(inked, -1, 1), at(inked, -1, -1)
+            four = up.astype(np.int8) + down + left + right
+            # it hangs on one side, that side is a straight run, and nothing is beside or beyond it
+            bump = inked & (four == 1) & ((down & dl & dr & ~ul & ~ur) | (up & ul & ur & ~dl & ~dr) | (left & ul & dl & ~ur & ~dr) | (right & ur & dr & ~ul & ~dl))
+            # it is open to one side only, and the run goes on straight to both sides of the opening
+            dent = ~inked & (four == 3) & ((~up & ~ul & ~ur) | (~down & ~dl & ~dr) | (~left & ~ul & ~dl) | (~right & ~ur & ~dr))
+            if not (bump.any() or dent.any()):
+                break
+            before = image.copy()
+            code = stills.codes(before[..., :3])
+            for mask, wanted in ((bump, ~inked), (dent, inked)):      # each takes the colour most common beside it, from the other kind
+                for y, x in zip(*np.nonzero(mask)):
+                    votes = {}
+                    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < image.shape[0] and 0 <= nx < image.shape[1] and wanted[ny, nx] and before[ny, nx, 3] >= 128:
+                            votes[code[ny, nx]] = votes.get(code[ny, nx], 0) + 1
+                    if votes:
+                        winner = int(max(votes, key=lambda c: (votes[c], -c)))
+                        image[y, x] = (winner >> 16, winner >> 8 & 255, winner & 255, 255)
+                    elif what == "silhouette" and mask is bump:
+                        image[y, x] = 0                               # a bump on the silhouette goes back to emptiness
+        out.append(image)
+    return out
+
+
 OPS = {"cutout": cutout, "trim": trim, "outline": outline, "pad": pad, "flip": flip, "shift": shift, "replace": replace, "clean": clean,
-       "hold": hold, "thin": thin, "halo": halo, "fringe": fringe}
-# these also take an area and then change nothing outside it; with "protect": true, nothing inside it
-LIMITED = ("replace", "clean", "thin", "halo", "fringe")
+       "hold": hold, "thin": thin, "halo": halo, "fringe": fringe, "smooth": smooth}
+# these also take an area and then change nothing outside it; with "protect": true, nothing inside it. With
+# "steady": true, cells that showed the same in every frame before the step show the same after it.
+LIMITED = ("replace", "clean", "thin", "halo", "fringe", "smooth")
 
 
 def apply(images, steps):
@@ -259,18 +320,24 @@ def apply(images, steps):
         if not isinstance(step, dict) or step.get("op") not in OPS:
             raise ValueError(f"Edit {number}: op is one of {', '.join(OPS)}")
         try:
-            where = {k: step[k] for k in ("rect", "points", "cells", "protect") if k in step} if step["op"] in LIMITED else {}
-            if where:
+            limited = step["op"] in LIMITED
+            where = {k: step[k] for k in ("rect", "points", "cells", "protect") if k in step} if limited else {}
+            steady = limited and bool(step.get("steady")) and len(images) > 1
+            if where or steady:
                 if len(where) == 1 and "protect" in where:
                     raise ValueError("protect needs an area: rect, points or cells")
-                done = OPS[step["op"]]([image.copy() for image in images], {k: v for k, v in step.items() if k not in where})
+                done = OPS[step["op"]]([image.copy() for image in images], {k: v for k, v in step.items() if k not in where and k != "steady"})
+                if steady:                                        # what stood still before the step stands still after it
+                    still = np.all([(image == images[0]).all(axis=2) for image in images[1:]], axis=0)
+                    for changed in done[1:]:
+                        changed[still] = done[0][still]
                 mask = area(where, images[0].shape[1], images[0].shape[0])
                 if where.get("protect"):                          # the area is what must stay as it is
                     mask = ~mask
                 for image, changed in zip(images, done):
                     image[mask] = changed[mask]
             else:
-                images = OPS[step["op"]](images, step)
+                images = OPS[step["op"]](images, {k: v for k, v in step.items() if k != "steady"} if limited else step)
         except (ValueError, TypeError) as error:
             raise ValueError(f"Edit {number} ({step['op']}): {error}") from None
     return [np.ascontiguousarray(image) for image in images]

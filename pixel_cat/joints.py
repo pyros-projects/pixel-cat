@@ -8,6 +8,7 @@ parent does, the way a hand follows a forearm.
               "parent": "L2",                the id of the layer it hangs on, or null
               "wrap": true,                  after the last key, the motion runs on into the first one
               "drag": {"frames": 2, "amount": 0.5},     lag behind the parent's turning, or null
+              "sway": {"amount": 6, "cycles": 1, "phase": 0},     swing to and fro on its own, or null
               "keys": [{"angle": 0, "x": 0, "y": 0, "ease": "smooth"}, null, ...]}     one entry per frame
 
 Angles are in degrees, clockwise. `ease` says how the motion leaves a key.
@@ -59,6 +60,17 @@ def drag(value):
     return {"frames": integer(value.get("frames", 2), 1, 12, "frames"), "amount": amount} if amount else None
 
 
+def sway(value):
+    """A swing on top of the pose: `amount` degrees to each side, `cycles` times per loop, starting `phase`
+    degrees into the swing."""
+    if not value:
+        return None
+    if not isinstance(value, dict) or set(value) - {"amount", "cycles", "phase"}:
+        raise ValueError('sway is {"amount": degrees, "cycles": 1 to 12, "phase": degrees}, or null')
+    amount = number(value.get("amount", 6), 0, 180, "amount")
+    return {"amount": amount, "cycles": integer(value.get("cycles", 1), 1, 12, "cycles"), "phase": number(value.get("phase", 0), -360, 360, "phase")} if amount else None
+
+
 def key(value):
     """One key, with every setting in place."""
     if value is None:
@@ -76,7 +88,8 @@ def clean(value, frames, width, height):
     if not isinstance(value, dict) or not isinstance(value.get("keys"), list) or len(value["keys"]) != frames:
         raise ValueError("A joint needs a pivot and one key entry per frame")
     return {"pivot": point(value.get("pivot"), width, height), "parent": value.get("parent") if isinstance(value.get("parent"), str) else None,
-            "wrap": bool(value.get("wrap", True)), "drag": drag(value.get("drag")), "keys": [key(k) for k in value["keys"]]}
+            "wrap": bool(value.get("wrap", True)), "drag": drag(value.get("drag")), "sway": sway(value.get("sway")),
+            "keys": [key(k) for k in value["keys"]]}
 
 
 def local(joint, frame, count):
@@ -141,6 +154,9 @@ def world(layers, index, frame, count, memo=None):
     if (index, frame) not in memo:
         joint = layers[index]["joint"]
         angle, x, y = local(joint, frame, count)
+        swing = joint.get("sway")
+        if swing:                             # whole swings per loop, so the last frame leads into the first
+            angle += swing["amount"] * math.sin(math.tau * swing["cycles"] * frame / count + math.radians(swing["phase"]))
         carried, turned = np.eye(3), 0.0
         parent = parent_of(layers, index)
         if parent is not None and index not in chain(layers, parent):
@@ -183,19 +199,22 @@ def warp(image, m, k=4):
         inside = (sx >= 0) & (sx < w) & (sy >= 0) & (sy < h)
         return np.where(inside, code[np.clip(sy, 0, h - 1), np.clip(sx, 0, w - 1)], -1)
 
-    gx, gy = np.arange(x0, x1)[None, :, None], np.arange(y0, y1)[:, None, None]
     steps = (np.arange(k) + 0.5) / k
     ox, oy = np.tile(steps, k)[None, None, :], np.repeat(steps, k)[None, None, :]
-    samples = found(gx + ox, gy + oy)                                   # (rows, columns, k * k)
-    centre = found(gx[..., 0] + 0.5, gy[..., 0] + 0.5)
-    filled = (samples >= 0).sum(axis=2) * 2 >= k * k
-    ordered = np.sort(samples, axis=2)
-    first = np.concatenate([np.ones(ordered.shape[:2] + (1,), dtype=bool), ordered[..., 1:] != ordered[..., :-1]], axis=2)
-    start = np.maximum.accumulate(np.where(first, np.arange(k * k), 0), axis=2)
-    length = np.where(ordered >= 0, np.arange(k * k) - start + 1, 0)    # empty places do not vote
-    winner = np.take_along_axis(ordered, length.argmax(axis=2)[..., None], axis=2)[..., 0]
-    close = (centre >= 0) & ((samples == centre[..., None]).sum(axis=2) + 2 >= length.max(axis=2))
-    winner = np.where(close, centre, winner)
-    part = out[y0:y1, x0:x1]
-    part[filled] = np.stack([winner[filled] >> 24 & 255, winner[filled] >> 16 & 255, winner[filled] >> 8 & 255, winner[filled] & 255], axis=1)
+    portion = max(1, 400_000 // (x1 - x0))                              # rows at a time, so a large picture stays cheap
+    for top in range(y0, y1, portion):
+        bottom = min(y1, top + portion)
+        gx, gy = np.arange(x0, x1)[None, :, None], np.arange(top, bottom)[:, None, None]
+        samples = found(gx + ox, gy + oy)                               # (rows, columns, k * k)
+        centre = found(gx[..., 0] + 0.5, gy[..., 0] + 0.5)
+        filled = (samples >= 0).sum(axis=2) * 2 >= k * k
+        ordered = np.sort(samples, axis=2)
+        first = np.concatenate([np.ones(ordered.shape[:2] + (1,), dtype=bool), ordered[..., 1:] != ordered[..., :-1]], axis=2)
+        start = np.maximum.accumulate(np.where(first, np.arange(k * k), 0), axis=2)
+        length = np.where(ordered >= 0, np.arange(k * k) - start + 1, 0)    # empty places do not vote
+        winner = np.take_along_axis(ordered, length.argmax(axis=2)[..., None], axis=2)[..., 0]
+        close = (centre >= 0) & ((samples == centre[..., None]).sum(axis=2) + 2 >= length.max(axis=2))
+        winner = np.where(close, centre, winner)
+        part = out[top:bottom, x0:x1]
+        part[filled] = np.stack([winner[filled] >> 24 & 255, winner[filled] >> 16 & 255, winner[filled] >> 8 & 255, winner[filled] & 255], axis=1)
     return out

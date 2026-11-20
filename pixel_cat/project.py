@@ -28,7 +28,7 @@ from .options import integer, keys
 
 FORMAT = "pixel-cat project"
 SUFFIX = ".pixelcat"
-LIMITS = {"side": 1024, "frames": 256, "layers": 32}
+LIMITS = {"side": 2048, "frames": 256, "layers": 32}
 
 
 def png_bytes(image):
@@ -71,6 +71,16 @@ class Project:
 
     def _layer(self, name):
         return {"id": self._new_id(), "name": name, "visible": True, "locked": False, "opacity": 1.0, "cels": [None] * len(self.frames)}
+
+    def _order(self, order):
+        """Rebuild the frames from a list of frame numbers; None stands for a new, empty frame. A number may
+        come twice: then the frame is copied, with its cels and keys."""
+        self.frames = [{"duration": 120} if f is None else dict(self.frames[f]) for f in order]
+        for layer in self.layers:
+            layer["cels"] = [None if f is None else layer["cels"][f] for f in order]
+            if layer.get("joint"):
+                held = layer["joint"]["keys"]
+                layer["joint"]["keys"] = [dict(held[f]) if f is not None and held[f] else None for f in order]
 
     @staticmethod
     def _tracks(layer):
@@ -337,37 +347,37 @@ class Project:
             self.layers.pop(upper)
             return "merged a layer into the one below"
         if kind == "add-frame":
-            if frames >= LIMITS["frames"]:
-                raise ValueError("A project holds up to 256 frames")
+            # one empty frame, or copies: of one frame (`count` times) or of several frames in a row
+            keys(op, {"op", "at", "copy", "count"}, "add-frame")
             at = integer(op.get("at", frames), 0, frames, "at")
             source = op.get("copy")
-            if source is not None:
-                integer(source, 0, frames - 1, "copy")
-            self.frames.insert(at, {"duration": self.frames[source]["duration"] if source is not None else 120})
-            for layer in self.layers:
-                layer["cels"].insert(at, layer["cels"][source] if source is not None else None)
-                if layer.get("joint"):                                # a copied frame keeps its key
-                    held = layer["joint"]["keys"][source] if source is not None else None
-                    layer["joint"]["keys"].insert(at, dict(held) if held else None)
-            return f"added frame {at}"
+            if isinstance(source, list):
+                copies = [integer(f, 0, frames - 1, "copy") for f in source]
+            elif source is not None:
+                copies = [integer(source, 0, frames - 1, "copy")] * integer(op.get("count", 1), 1, LIMITS["frames"], "count")
+            else:
+                copies = [None] * integer(op.get("count", 1), 1, LIMITS["frames"], "count")
+            if frames + len(copies) > LIMITS["frames"]:
+                raise ValueError("A project holds up to 256 frames")
+            self._order(list(range(at)) + copies + list(range(at, frames)))
+            return f"added frame {at}" if len(copies) == 1 else f"added {len(copies)} frames at {at}"
         if kind == "remove-frame":
-            if frames == 1:
+            keys(op, {"op", "frame", "frames"}, "remove-frame")
+            gone = set(edits.targets(op, frames)) if "frames" in op else {self._at(op, "frame", frames)}
+            if len(gone) >= frames:
                 raise ValueError("A project keeps at least one frame")
-            at = self._at(op, "frame", frames)
-            self.frames.pop(at)
-            for layer in self.layers:
-                for track in self._tracks(layer):
-                    track.pop(at)
-            return f"removed frame {at}"
+            self._order([f for f in range(frames) if f not in gone])
+            return f"removed frame {min(gone)}" if len(gone) == 1 else f"removed {len(gone)} frames"
         if kind == "move-frame":
-            at, to = self._at(op, "frame", frames), integer(op.get("to", 0), 0, frames - 1, "to")
-            self.frames.insert(to, self.frames.pop(at))
-            for layer in self.layers:
-                for track in self._tracks(layer):
-                    track.insert(to, track.pop(at))
-            return f"moved frame {at} to {to}"
+            # one frame, or several: they are taken out and put back in a row, starting at `to`
+            keys(op, {"op", "frame", "frames", "to"}, "move-frame")
+            block = [integer(f, 0, frames - 1, "frame") for f in op["frames"]] if "frames" in op else [self._at(op, "frame", frames)]
+            rest = [f for f in range(frames) if f not in set(block)]
+            to = integer(op.get("to", 0), 0, len(rest), "to")
+            self._order(rest[:to] + block + rest[to:])
+            return f"moved frame {block[0]} to {to}" if len(block) == 1 else f"moved {len(block)} frames to {to}"
         if kind == "set-frame":
-            targets = range(frames) if op.get("frame") == "all" else [self._at(op, "frame", frames)]
+            targets = edits.targets(op, frames) if "frames" in op else range(frames) if op.get("frame") == "all" else [self._at(op, "frame", frames)]
             for at in targets:
                 self.frames[at]["duration"] = integer(op.get("duration", 120), 10, 60000, "duration")
             return "changed the timing"
@@ -417,12 +427,14 @@ class Project:
             return f"applied {len(steps)} step{'s' if len(steps) != 1 else ''} to layer {layer}"
         if kind == "hold":
             # an area of one frame, copied into the others on the same layer: the area stands still
-            keys(op, {"op", "layer", "from", "frames", "rect", "points", "cells"}, "hold")
+            keys(op, {"op", "layer", "from", "frames", "rect", "points", "cells", "outside"}, "hold")
             layer = self._at(op, "layer", layers)
             if self.layers[layer]["locked"]:
                 raise ValueError(f"Layer {layer} is locked")
             source = self.cel(layer, integer(op.get("from", 0), 0, frames - 1, "from"))
             mask = edits.area(op, self.width, self.height)
+            if op.get("outside"):                                     # only the area keeps moving
+                mask = ~mask
             changed = 0
             for frame in edits.targets(op, frames):
                 image = self.cel(layer, frame).copy()
@@ -432,7 +444,7 @@ class Project:
             return f"held {int(mask.sum())} cells of frame {op.get('from', 0)} still, {changed} cells changed"
         if kind == "joint":
             # a layer turns around a pivot and can hang on another jointed layer
-            keys(op, {"op", "layer", "frame", "pivot", "parent", "wrap", "drag", "spread", "remove"}, "joint")
+            keys(op, {"op", "layer", "frame", "pivot", "parent", "wrap", "drag", "sway", "cover", "spread", "remove"}, "joint")
             index = self._at(op, "layer", layers)
             layer = self.layers[index]
             if op.get("remove"):
@@ -447,7 +459,7 @@ class Project:
             if new:
                 if "pivot" not in op:
                     raise ValueError("A new joint needs a pivot, the point the layer turns around: [x, y] in cells")
-                layer["joint"] = {"pivot": [0.0, 0.0], "parent": None, "wrap": True, "drag": None, "keys": [None] * frames}
+                layer["joint"] = {"pivot": [0.0, 0.0], "parent": None, "wrap": True, "drag": None, "sway": None, "keys": [None] * frames}
             joint = layer["joint"]
             try:
                 if "pivot" in op:
@@ -465,6 +477,14 @@ class Project:
                     joint["wrap"] = bool(op["wrap"])
                 if "drag" in op:
                     joint["drag"] = joints.drag(op["drag"])
+                if "sway" in op:
+                    joint["sway"] = joints.sway(op["sway"])
+                cover = op.get("cover")
+                if cover is not None:
+                    keys(cover, {"radius", "color"}, "cover")
+                    radius, paint = integer(cover.get("radius", 4), 1, 24, "radius"), colour(cover.get("color", "#000000"))
+                    if layers >= LIMITS["layers"]:
+                        raise ValueError("A project holds up to 32 layers")
             except ValueError:
                 if new:
                     layer.pop("joint")
@@ -473,6 +493,18 @@ class Project:
                 source = layer["cels"][self._at(op, "frame", frames)]
                 if source is not None:
                     layer["cels"] = [source if c is None else c for c in layer["cels"]]
+            if cover is not None:
+                # a disc at the pivot on a layer of its own, below the part and hanging on it: it hides the gap
+                # that opens at the joint when the part turns
+                ys, xs = np.mgrid[0:self.height, 0:self.width]
+                disc = (xs + 0.5 - joint["pivot"][0]) ** 2 + (ys + 0.5 - joint["pivot"][1]) ** 2 <= radius ** 2
+                patch = self.blank()
+                patch[disc] = paint
+                under = self._layer(f"{layer['name']} joint"[:60])
+                under["cels"] = [self.snap(patch) if disc.any() else None] * frames
+                under["joint"] = {"pivot": list(joint["pivot"]), "parent": layer["id"], "wrap": True, "drag": None, "sway": None, "keys": [None] * frames}
+                self.layers.insert(index, under)
+                return f"covered the joint of layer {layer['name']} with a disc on a new layer below it"
             on = joints.parent_of(self.layers, index)
             return (f"gave layer {layer['name']} a joint" if new else f"changed the joint of layer {layer['name']}") + \
                 (f", hanging on {self.layers[on]['name']}" if on is not None else "")
@@ -510,6 +542,38 @@ class Project:
                 self.layers[i].pop("joint")
                 self.layers[i]["cels"] = [None if c is None or not c[..., 3].any() else self.snap(c) for c in cels]
             return f"baked the motion of {len(chosen)} layer{'s' if len(chosen) != 1 else ''} into {'their' if len(chosen) != 1 else 'its'} frames"
+        if kind == "append":
+            # another project after the last frame: its layers go onto ours of the same name, or become new ones
+            keys(op, {"op", "project"}, "append")
+            other = Project.from_json(op["project"])
+            if any(layer.get("joint") for layer in other.layers):
+                other.apply({"op": "bake"})                           # its motion comes as plain frames
+            if frames + len(other.frames) > LIMITS["frames"]:
+                raise ValueError("A project holds up to 256 frames")
+            self._order(list(range(frames)) + [None] * len(other.frames))
+            for at, frame in enumerate(other.frames):
+                self.frames[frames + at]["duration"] = frame["duration"]
+            taken, added = set(), 0
+            for layer in other.layers:
+                home = next((i for i, mine in enumerate(self.layers) if mine["name"] == layer["name"] and not mine.get("joint") and i not in taken), None)
+                if home is None:
+                    if len(self.layers) >= LIMITS["layers"]:
+                        raise ValueError("A project holds up to 32 layers")
+                    self.layers.append(dict(self._layer(layer["name"]), visible=layer["visible"], opacity=layer["opacity"]))
+                    home, added = len(self.layers) - 1, added + 1
+                taken.add(home)
+                for at, cel in enumerate(layer["cels"]):
+                    if cel is not None:
+                        canvas = self.blank()
+                        h, w = min(self.height, other.height), min(self.width, other.width)
+                        canvas[:h, :w] = cel[:h, :w]
+                        self.layers[home]["cels"][frames + at] = self.snap(canvas) if canvas[..., 3].any() else None
+            note = f"appended {len(other.frames)} frame{'s' if len(other.frames) != 1 else ''} from a project with {len(other.layers)} layer{'s' if len(other.layers) != 1 else ''}"
+            if added:
+                note += f", {added} of them new here"
+            if (other.width, other.height) != (self.width, self.height):
+                note += f"; it is {other.width} by {other.height}, so its art sits at the top left"
+            return note
         if kind == "place":
             # converted frames as a new layer, starting at a frame; the project grows by frames as needed
             images = [from_png(base64.b64decode(p)) for p in op["frames"]]
@@ -563,4 +627,4 @@ class Project:
 
 OPERATIONS = ["draw", "clear", "set-cel", "add-layer", "remove-layer", "move-layer", "set-layer", "merge-down", "add-frame",
               "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "joint", "pose", "bake",
-              "place", "resize"]
+              "append", "place", "resize"]

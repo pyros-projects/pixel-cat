@@ -76,6 +76,50 @@ class Projects(unittest.TestCase):
         self.assertEqual(len(p.frames), 2)
         self.assertEqual(p.summary()["layers"][0]["cels"], [True, True])
 
+    def test_frames_are_added_removed_moved_and_timed_several_at_once(self):
+        p = self.project
+        for n in range(3):
+            p.apply({"op": "add-frame"})
+        for f, colour in enumerate(("#ff0000", "#00ff00", "#0000ff", "#ffffff")):
+            p.apply({"op": "draw", "frame": f, "color": colour, "rect": [0, 0, 1, 1]})
+        mark = lambda: [tuple(int(v) for v in p.composite(f)[0, 0, :3]) if p.layers[0]["cels"][f] is not None else None for f in range(len(p.frames))]   # noqa: E731
+        R, G, B, W = (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255)
+        self.assertIn("added 3 frames", p.apply({"op": "add-frame", "copy": 3, "count": 3}))     # the last frame carried on
+        self.assertEqual(mark(), [R, G, B, W, W, W, W])
+        p.apply({"op": "add-frame", "copy": [0, 1], "at": 2})                                    # two frames copied in a row
+        self.assertEqual(mark(), [R, G, R, G, B, W, W, W, W])
+        self.assertIn("removed 3 frames", p.apply({"op": "remove-frame", "frames": [6, 7, 8]}))
+        p.apply({"op": "move-frame", "frames": [4, 5], "to": 0})                                 # a block to the front
+        self.assertEqual(mark(), [B, W, R, G, R, G])
+        p.apply({"op": "set-frame", "frames": [0, 1], "duration": 300})
+        self.assertEqual([f["duration"] for f in p.frames], [300, 300, 120, 120, 120, 120])
+        with self.assertRaisesRegex(ValueError, "at least one frame"):
+            p.apply({"op": "remove-frame", "frames": list(range(6))})
+
+    def test_another_project_joins_the_end_of_the_timeline(self):
+        p = self.project
+        p.apply({"op": "set-layer", "layer": 0, "name": "Ink"})
+        p.apply({"op": "draw", "color": "#ff0000", "rect": [0, 0, 2, 2]})
+        other = Project(16, 12)
+        other.apply({"op": "set-layer", "layer": 0, "name": "Ink"})
+        other.apply({"op": "add-frame"})
+        other.apply({"op": "set-frame", "frame": 1, "duration": 250})
+        other.apply({"op": "draw", "frame": 1, "color": "#00ff00", "rect": [4, 4, 2, 2]})
+        other.apply({"op": "add-layer", "name": "Glow"})
+        other.apply({"op": "draw", "layer": 1, "frames": "all", "color": "#0000ff", "rect": [8, 8, 2, 2]})
+        other.apply({"op": "joint", "layer": 1, "pivot": [9, 9]})
+        other.apply({"op": "pose", "layer": 1, "frame": 1, "x": 3})                              # its motion arrives as plain frames
+        note = p.apply({"op": "append", "project": other.to_json()})
+        self.assertIn("appended 2 frames from a project with 2 layers, 1 of them new here", note)
+        self.assertEqual(([l["name"] for l in p.layers], [f["duration"] for f in p.frames]), (["Ink", "Glow"], [120, 120, 250]))
+        self.assertEqual((tuple(p.composite(2)[4, 4]), tuple(p.composite(2)[8, 11]), tuple(p.composite(0)[8, 8])), ((0, 255, 0, 255), (0, 0, 255, 255), (0, 0, 0, 0)))
+        self.assertFalse(any(layer.get("joint") for layer in p.layers))
+        big = Project(2048, 4)                                      # a canvas may be 2048 cells wide
+        big.apply({"op": "draw", "color": "#ffffff", "rect": [2040, 0, 8, 4]})
+        self.assertEqual(int((big.composite(0)[..., 3] > 0).sum()), 32)
+        with self.assertRaisesRegex(ValueError, "width"):
+            Project(2049, 4)
+
     def test_an_area_of_one_frame_can_be_held_in_the_others(self):
         p = self.project
         for frame in range(3):
@@ -261,6 +305,27 @@ class Joints(unittest.TestCase):
             p.apply({"op": "joint", "layer": 1})
         self.assertNotIn("joint", p.layers[1])                      # a failed start leaves no half joint behind
 
+    def test_a_part_can_sway_on_its_own_and_the_loop_still_closes(self):
+        from pixel_cat import joints
+
+        p = self.arm()
+        p.apply({"op": "joint", "layer": 1, "sway": {"amount": 10, "cycles": 1}})
+        turns = [round(joints.world(p.layers, 1, f, 4)[1] - joints.world(p.layers, 0, f, 4)[1], 6) for f in range(4)]
+        self.assertEqual(turns, [0, 10, 0, -10])                    # one swing over the four frames, back where it began
+        p.save(self.folder / "sway.pixelcat")
+        self.assertEqual(Project.load(self.folder / "sway.pixelcat").layers[1]["joint"]["sway"], {"amount": 10.0, "cycles": 1, "phase": 0.0})
+        with self.assertRaisesRegex(ValueError, "sway is"):
+            p.apply({"op": "joint", "layer": 1, "sway": {"speed": 3}})
+
+    def test_a_disc_covers_the_joint_and_follows_the_part(self):
+        p = self.arm()
+        note = p.apply({"op": "joint", "layer": 1, "cover": {"radius": 2, "color": "#00ff00"}})
+        self.assertIn("covered the joint of layer Hand", note)
+        self.assertEqual([layer["name"] for layer in p.layers], ["Forearm", "Hand joint", "Hand"])
+        green = lambda f: self.where(p.composite(f, only=1), (0, 255, 0, 255))      # noqa: E731
+        self.assertEqual((green(0), green(2)), ((18, 14, 22, 18), (6, 26, 10, 30)))   # around the wrist, wherever the wrist is
+        self.assertEqual(p.summary()["layers"][1]["joint"]["parent"], 2)
+
     def test_baking_turns_the_motion_into_plain_frames(self):
         p = self.arm()
         before = [p.composite(f) for f in range(4)]
@@ -377,6 +442,23 @@ class Studios(unittest.TestCase):
         for entry in old["layers"]:                                 # a file from before layers had ids still opens
             entry.pop("id"), entry.pop("joint")
         self.assertEqual(Project.from_json(old).layers[0]["id"], "L1")
+
+    def test_a_project_file_comes_in_with_its_layers(self):
+        other = Project(8, 8)
+        other.apply({"op": "set-layer", "layer": 0, "name": "Sky"})
+        other.apply({"op": "draw", "color": "#0000ff", "rect": [0, 0, 8, 2]})
+        other.apply({"op": "add-layer", "name": "Sun"})
+        other.apply({"op": "draw", "layer": 1, "color": "#ffff00", "rect": [3, 3, 2, 2]})
+        data = json.dumps(other.to_json()).encode()
+        self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [0, 6, 8, 2]}})
+        request = urllib.request.Request(self.url + "/api/import?name=other.pixelcat&how=frames&settings=%7B%7D", data=data, method="POST")
+        done = json.loads(urllib.request.urlopen(request).read())
+        self.assertIn("appended 1 frame from a project with 2 layers", done["note"])
+        project = Project.load(self.folder / "s.pixelcat")
+        self.assertEqual(([l["name"] for l in project.layers], len(project.frames)), (["Layer 1", "Sky", "Sun"], 2))
+        request = urllib.request.Request(self.url + "/api/import?name=other.pixelcat&how=project&settings=%7B%7D", data=data, method="POST")
+        self.assertIn("with its layers", json.loads(urllib.request.urlopen(request).read())["note"])
+        self.assertEqual([l["name"] for l in Project.load(self.folder / "s.pixelcat").layers], ["Sky", "Sun"])
 
     def test_a_preview_shows_what_would_change_and_changes_nothing(self):
         self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [0, 0, 8, 8]}})

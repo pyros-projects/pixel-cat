@@ -70,7 +70,7 @@ Finishing steps on the converted art, applied in order to every frame.
 | --- | --- | --- |
 | `cutout` | makes the background transparent: everything that connects to the picture's edge through cells close to a corner color | `tolerance` (0 to 255, default 24), `color` to name the background, `fringe` (default true) also removes a thin rim tinted by the background |
 | `trim` | crops to the drawing; an animation is cropped to the box that holds every frame | `margin` in cells |
-| `outline` | draws a one-cell outline around everything opaque; the picture grows by one cell on each side | `color`, `corners` (also close diagonal gaps), `grow` |
+| `outline` | draws an outline around everything opaque; the picture grows on each side to make room. With `inside`, the outermost cells of the drawing take the color instead. | `color`, `width` (1 to 3 cells, default 1), `corners` (also close diagonal gaps), `grow`, `inside` |
 | `pad` | adds cells around the picture | `cells`: one number or `[left, top, right, bottom]`; `color` |
 | `flip` | mirrors | `axis`: `x` or `y` |
 | `shift` | moves the picture by whole cells and wraps around, for checking how a tile repeats | `x`, `y` |
@@ -79,9 +79,10 @@ Finishing steps on the converted art, applied in order to every frame.
 | `thin` | thins drawn lines to one cell and closes small breaks. Lines are dark cells, or cells near `color`. Broad dark areas and small shapes such as an eye stay as they are. | `color`, `tolerance` (0 to 180, default 28), `width`: the thickest line in cells (2 to 8, default 4), `gap`: close breaks of up to 1, 2 or 3 cells (default 0) |
 | `halo` | removes the thin rim of in-between color that smooth scaling leaves beside dark lines. Run it before `thin`. | `strength`: `gentle` or `stronger` |
 | `fringe` | removes loose bits at the edge of a cut-out drawing: small groups of one color with mostly empty cells around them | `max`: the largest group in cells (default 4), `contact`: the share of empty surroundings from which a group goes (default 0.5) |
-| `hold` | makes an area of an animation stand still: its cells are copied from one frame into the others, and everything outside keeps moving | `from` (the frame to copy, default 0), `frames` (`"all"` or a list), and the area: `rect` `[x, y, width, height]`, `points` (a polygon) or `cells` (a list of `[x, y]`), all in cells |
+| `smooth` | takes single-cell bumps off an edge and fills single-cell dents in it; tips of thin lines and deeper gaps stay | `what`: `silhouette` (the border between drawing and emptiness, the default) or `lines` (dark cells, or cells near `color`), `passes` (1 to 4) |
+| `hold` | makes an area of an animation stand still: its cells are copied from one frame into the others, and everything outside keeps moving. With `outside`, it is the other way round: only the area keeps moving. | `from` (the frame to copy, default 0), `frames` (`"all"` or a list), `outside`, and the area: `rect` `[x, y, width, height]`, `points` (a polygon) or `cells` (a list of `[x, y]`), all in cells |
 
-`replace`, `clean`, `thin`, `halo` and `fringe` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it. With `"protect": true` it is the other way round: nothing inside the area changes.
+`replace`, `clean`, `thin`, `halo`, `fringe` and `smooth` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it. With `"protect": true` it is the other way round: nothing inside the area changes. In an animation, `"steady": true` makes sure that a cell which showed the same in every frame before the step shows the same after it, so a cleanup cannot start a flicker.
 
 A step with a wrong setting stops the job and names itself: `Edit 2 (outline): color is a colour written as #RRGGBB`. In a recipe with both `edits` and `loop`, the edits come first.
 

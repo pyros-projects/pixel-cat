@@ -174,7 +174,20 @@ class Studio:
         return message
 
     def bring_in(self, data, name, settings, how):
-        """Convert an uploaded picture, GIF or video and place it in the project."""
+        """Convert an uploaded picture, GIF or video and place it in the project. A project file comes in as
+        it is: in place of this one, or after the last frame with its layers."""
+        if Path(name).suffix.lower() == SUFFIX and how in ("project", "frames"):
+            data = json.loads(data)
+            other = Project.from_json(data)
+            summary = {"width": other.width, "height": other.height, "frames": len(other.frames), "colors": len(other.palette)}
+            with self.lock:
+                if how == "frames":
+                    return self.change({"op": "append", "project": data}, "you") | {"summary": summary, "recommendation": None}
+                before = self.project.snapshot()
+                self.project = other
+                self.undo.append((before, f"opened {name}", "you"))
+                self.redo.clear()
+                return self._changed("you", f"opened {name} with its layers") | {"summary": summary, "recommendation": None}
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / (Path(name).name or "upload.png")
             source.write_bytes(data)

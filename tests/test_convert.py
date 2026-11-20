@@ -543,6 +543,73 @@ class Edits(Case):
         self.assertTrue(colours(self.out()) <= set(PALETTES["painter48"]))
         self.assertGreater(len(colours(self.out())), 12)
 
+    def test_bumps_go_and_dents_fill_while_tips_and_gaps_stay(self):
+        image = np.zeros((30, 40, 4), dtype=np.uint8)
+        image[10:20, 5:35] = (200, 60, 60, 255)                     # a block
+        image[9, 12] = (200, 60, 60, 255)                           # a bump on its top edge
+        image[19, 20] = 0                                           # a dent in its bottom edge
+        image[19:22, 28] = 0
+        image[17:19, 28] = 0                                        # a gap five cells deep
+        image[2:10, 30] = (200, 60, 60, 255)                        # an antenna one cell wide
+        out = self.native(image, {"op": "smooth"})
+        solid = out[..., 3] > 0
+        self.assertFalse(solid[9, 12])                              # the bump is gone
+        self.assertTrue(solid[19, 20])                              # the dent is filled
+        self.assertFalse(solid[17:20, 28].any())                    # the gap stays
+        self.assertTrue(solid[2:10, 30].all())                      # and so does the antenna, tip included
+        lined = self.drawing()                                      # a dark line on a light field, with a bump
+        lined[17, 30, :3] = (20, 20, 30)
+        out = self.native(lined, {"op": "smooth", "what": "lines"})
+        self.assertEqual(tuple(out[17, 30, :3]), (230, 200, 120))   # the bump took the field's colour
+
+    def test_an_outline_can_be_wider_or_sit_inside(self):
+        image = np.zeros((20, 20, 4), dtype=np.uint8)
+        image[6:14, 6:14] = (200, 60, 60, 255)
+        out = self.native(image, {"op": "outline", "color": "#101018", "width": 2})
+        self.assertEqual(out.shape[:2], (24, 24))                   # it grew by two cells on each side
+        dark = (out[..., :3] == (16, 16, 24)).all(axis=2) & (out[..., 3] > 0)
+        self.assertTrue(dark[6:8, 10].all() and not dark[5, 10] and not dark[8, 10])
+        out = self.native(image, {"op": "outline", "color": "#101018", "inside": True})
+        dark = (out[..., :3] == (16, 16, 24)).all(axis=2) & (out[..., 3] > 0)
+        self.assertEqual((out.shape[:2], int(dark.sum()), int((out[..., 3] > 0).sum())), ((20, 20), 28, 64))   # the rim of the block itself
+
+    def test_only_a_chosen_area_keeps_moving(self):
+        from pixel_cat import edits
+
+        frames = []
+        for on in (True, False, True, False):                       # two rectangles blink together
+            image = np.zeros((20, 30, 4), dtype=np.uint8)
+            image[..., 3] = 255
+            image[5:9, 4:8] = image[5:9, 20:24] = (255, 255, 255, 255) if on else (0, 0, 0, 255)
+            frames.append(image)
+        out = np.stack(edits.apply(frames, [{"op": "hold", "rect": [20, 5, 4, 4], "from": 0, "outside": True}]))
+        self.assertTrue((out[:, 5:9, 4:8] == out[0, 5:9, 4:8]).all())          # the left one stands still now
+        self.assertFalse((out[:, 5:9, 20:24] == out[0, 5:9, 20:24]).all())     # the chosen one blinks on
+
+    def test_a_steady_step_keeps_still_cells_the_same_in_every_frame(self):
+        from pixel_cat import edits
+
+        rng = np.random.default_rng(3)
+        base = np.zeros((24, 24, 4), dtype=np.uint8)
+        base[..., :3] = (60, 120, 200)
+        base[..., 3] = 255
+        frames = []
+        for n in range(3):
+            image = base.copy()
+            image[10:13, 2 + 6 * n:5 + 6 * n, :3] = (250, 240, 120)        # something moves through
+            frames.append(image)
+
+        def nudge(images, step):                                           # a step that treats every frame a little differently
+            return [np.where(rng.random(image.shape[:2])[..., None] < 0.3, image // 2, image) for image in images]
+
+        edits.OPS["nudge"], edits.LIMITED = nudge, edits.LIMITED + ("nudge",)
+        self.addCleanup(lambda: (edits.OPS.pop("nudge"), setattr(edits, "LIMITED", edits.LIMITED[:-1])))
+        done = edits.apply([f.copy() for f in frames], [{"op": "nudge", "steady": True}])
+        still = np.all([(f == frames[0]).all(axis=2) for f in frames[1:]], axis=0)
+        self.assertTrue(all((image[still] == done[0][still]).all() for image in done[1:]))
+        loose = edits.apply([f.copy() for f in frames], [{"op": "nudge"}])
+        self.assertFalse(all((image[still] == loose[0][still]).all() for image in loose[1:]))
+
     def test_a_wrong_step_names_itself(self):
         with self.assertRaisesRegex(ValueError, "Edit 2 .outline.: color"):
             self.edit({"op": "cutout"}, {"op": "outline", "color": "red"})

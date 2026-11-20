@@ -78,17 +78,18 @@ Frames and layers are counted from 0; layer 0 is the bottom one. An operation th
 | `remove-layer`, `merge-down` | `layer` |
 | `move-layer` | `layer`, `to` |
 | `set-layer` | `layer`, and any of `name`, `visible`, `locked`, `opacity` |
-| `add-frame` | `at`, and `copy` to duplicate a frame |
-| `remove-frame` | `frame` |
-| `move-frame` | `frame`, `to` |
-| `set-frame` | `frame` (a number or `"all"`), `duration` in milliseconds |
+| `add-frame` | `at`; `copy` duplicates a frame, `count` times, or several frames given as a list |
+| `remove-frame` | `frame`, or `frames` (a list) |
+| `move-frame` | `frame` or `frames` (a list: they end up in a row), `to` |
+| `set-frame` | `frame` (a number or `"all"`) or `frames` (a list), `duration` in milliseconds |
 | `palette` | `colors` or `name` (a built-in palette), and `lock` (`true` or `false`): with a locked palette every colour that is drawn moves to its nearest palette colour |
 | `palette-from-art` | |
 | `edits` | `layer`, `frames` (`"all"` or a list), `steps`: the [finishing steps](recipes.md#edits) that keep the size |
-| `hold` | `layer`, `from`, `frames`, and `rect`, `points` or `cells`: an area of one frame, copied into the others, so that it stands still |
-| `joint` | `layer`, and any of `pivot` (`[x, y]` in cells; the centre of cell 8, 16 is `[8.5, 16.5]`), `parent` (a layer that has a joint, or `null`), `wrap`, `drag` (`{"frames": 2, "amount": 0.5}` or `null`), `spread` with `frame` (copy that frame's drawing to every empty frame), `remove` |
+| `hold` | `layer`, `from`, `frames`, and `rect`, `points` or `cells`: an area of one frame, copied into the others, so that it stands still. With `outside`, everything but the area is copied: only the area keeps moving. |
+| `joint` | `layer`, and any of `pivot` (`[x, y]` in cells; the centre of cell 8, 16 is `[8.5, 16.5]`), `parent` (a layer that has a joint, or `null`), `wrap`, `drag` (`{"frames": 2, "amount": 0.5}` or `null`), `sway` (`{"amount": 6, "cycles": 1, "phase": 0}` or `null`: degrees to each side, swings per loop), `cover` (`{"radius": 4, "color": "#rrggbb"}`: a disc at the pivot on a new layer below), `spread` with `frame` (copy that frame's drawing to every empty frame), `remove` |
 | `pose` | `layer`, `frame`, and any of `angle` (degrees, clockwise), `x`, `y`, `ease` (`smooth`, `linear`, `hold`, `anticipate`, `overshoot`): sets a key. `remove` takes the key away. |
 | `bake` | `layer` (with everything that hangs on it), or nothing for all joints: the motion becomes plain frames |
+| `append` | `project` (a project as JSON; `pixel-cat op` also takes `file`, a path): its frames follow the last one, its layers go onto layers of the same name or become new ones, its joints arrive baked |
 | `place` | `frames` (PNG images as base64), `name`, `frame`, `x`, `y`, `durations`: converted art as a new layer |
 | `resize` | `width`, `height`, and `x`, `y` to shift the art |
 
@@ -110,12 +111,12 @@ A project is one JSON file ending in `.pixelcat`:
              "cels": ["<PNG, base64>", null]}]}
 ```
 
-Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is a PNG of the project's size. A project has up to 256 frames, 32 layers and 1024 cells per side.
+Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is a PNG of the project's size. A project has up to 256 frames, 32 layers and 2048 cells per side.
 
 A layer with a joint carries it in the file. Its cels are the drawing at rest; `keys` has one entry per frame, `null` where the frame lies between keys, and `parent` is the `id` of the layer it hangs on:
 
 ```json
-"joint": {"pivot": [8.5, 16.5], "parent": "L2", "wrap": true, "drag": null,
+"joint": {"pivot": [8.5, 16.5], "parent": "L2", "wrap": true, "drag": null, "sway": null,
           "keys": [{"angle": 0, "x": 0, "y": 0, "ease": "smooth"}, null, {"angle": 90, "x": 0, "y": 0, "ease": "smooth"}, null]}
 ```
 
