@@ -2,6 +2,8 @@
 
 Each film uses one four-panel background sheet and one transparent sprite. ImageGen made the source paintings from the prompts below. The PNGs beside each `story.json` are the finished `pixel-cat` conversions used by the renderer. You can render the three films from those PNGs without an image generator.
 
+Three panels were painted a second time, one by one, because the hands in them were not drawn right: the first panel of *Tide Bell* and the first two of *Emberwing*. The image model got the old panel as a layout guide, a neighbouring panel for the style, and a prompt that describes the hand finger by finger. Because the layout stayed, the scene files needed almost no changes: only the outline of the chrysalis in *Emberwing*'s first shot was traced again. The prompts are under each film.
+
 ## Tide Bell
 
 ### Backgrounds
@@ -11,6 +13,16 @@ An original 2 by 2 animation background layout sheet, perfectly even quadrants, 
 ### Moving sprite
 
 An original single sprite on a fully transparent background: a mysterious luminous deep-sea jellyfish, large umbrella bell light cyan to pale mint capped with small gold knots, slender sinuous long streamers and tendrils trailing straight down. Three-quarter frontal, full body with clear outer contour, centered and comfortably inside the image. Beautiful hand-drawn 1990s dark adventure game pixel art, strong shapes, crisp 1-cell and 2-cell clusters dark teal interior shade, electric cyan on rim. Make the inner body substantially opaque so its shape reads at 100 pixels. No glow cloud beyond the silhouette, no floor or background or text. Portrait.
+
+### First panel, painted again
+
+Paint a new version of the first image: the same shot, the same composition, camera angle, colours and lighting. The second image shows another shot of the same film; match its drawing style exactly.
+
+The shot: underwater, a macro view of an antique salvage diver's hand in a heavy brass-plated diving glove gripping a thick vertical braided bell rope under a basalt arch. The rope runs straight from the top edge to the bottom edge, a little right of the center. A small brass rope ring sits on the rope in the upper half. The forearm with its riveted brass cuff comes in from the lower left corner.
+
+The hand must be anatomically correct and easy to read: a right hand seen from the back, closed around the rope in a firm grip. Four fingers wrap around the front of the rope side by side, each with three segments and a rounded brass knuckle plate, index finger on top and little finger at the bottom, getting slightly smaller. The thumb comes around the near side of the rope and lies across the index finger. The back of the hand, the wrist and the cuff connect naturally. Exactly five digits, no extra or fused fingers.
+
+Ink navy and deep peacock blue water, aged ochre brass, a rare electric turquoise light from the upper left, ruins and a cable silhouetted in the distance, a few specks in the water. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
 
 ## Platform Zero
 
@@ -31,3 +43,23 @@ An original 2 by 2 animation background layout sheet, perfectly even quadrants, 
 ### Moving sprite
 
 A single magnificent ember silk moth game sprite on a fully transparent background. Frontal dorsal view, symmetrical wings open and flat left/right, body and antennae on central vertical axis, head at top. Broad orange-coral and muted copper upper wings, creamy yellow translucent-looking eyespots, small dark flecks and deep plum markings, long thin forked tails hanging below. Entire silhouette isolated with comfortable margins, no ground, no surrounding glow. Original intricate hand-pixelled 1990s adventure cutscene asset, broad pixel clusters that read clearly at 85 pixels, dramatic graphic silhouette. No text or other objects. Square composition.
+
+### First panel, painted again
+
+Paint a new version of the first image: the same shot, the same composition, camera angle, colours and lighting. The second image shows another shot of the same film; match its drawing style exactly.
+
+The shot: inside a forgotten Victorian glasshouse at dusk, a tight macro view of a keeper's hand in a weathered brown leather work glove with stitched seams, held as a shelter above and behind a small curled amber chrysalis that hangs from a vine. The chrysalis hangs in the right half of the frame, a little above the middle, on its own thin stem, with free space around it. Ivy leaves and vines fill the lower half and the right edge. The forearm comes in from the lower left corner.
+
+The hand must be anatomically correct and easy to read: a left hand, slightly cupped, fingers together and gently curved over the chrysalis like a small roof, seen from the side. Four fingers lie side by side, each with three segments and visible finger seams, and the thumb sits apart, lower, pointing towards the viewer, with the pad of the thumb visible. The palm, the wrist and the glove's cuff connect naturally. Exactly five digits, natural proportions, no extra or fused fingers, no mitten shape.
+
+Verdigris and deep ivy greens, umber, warm amber light on the edges of the glove from the chrysalis and from orange windows in the far background. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
+
+### Second panel, painted again
+
+Paint a new version of the first image: the same shot, the same composition, camera angle, colours and lighting. The second image shows another shot of the same film; match its drawing style exactly.
+
+The shot: a medium portrait of a silver-haired greenhouse keeper in profile, in the left half of the frame, facing right, leaning forward. She holds a small candle on a flat brass dish under an amber chrysalis that hangs from a branch at the right. Behind her a misty Victorian conservatory with iron arches and a violet dusk sky. Keep the candle flame, the dish and the chrysalis where they are in the first image.
+
+The hand that holds the dish must be anatomically correct and easy to read: her right hand in a brown leather glove, palm up under the dish, four fingers side by side supporting it from below with their tips visible at the far edge, the thumb resting on the rim of the dish on the near side. Exactly five digits, natural proportions, wrist and sleeve cuff connected naturally. Her face stays calm, eyes lowered to the flame.
+
+Verdigris and deep ivy greens, umber, amber yellow and coral orange light from the candle on her face, hair and glove. Hand-pixelled 1990s dark fantasy adventure game cutscene art: carefully placed bold pixel clusters, crisp stepped silhouette contours, graphic shapes of light, subdued shadow detail, a limited palette, no visible scanlines, no pixel grid overlay, no text, no border. Full-bleed portrait frame, aspect 2:3.
