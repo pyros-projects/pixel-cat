@@ -103,7 +103,7 @@ function jointForm() {
   if ($("jointPanel").hidden || !S.doc) return;
   const layer = S.doc.layers[S.layer], joint = layer.joint;
   $("jointNone").hidden = !!joint; $("jointSome").hidden = !joint;
-  if (!joint) { $("jointNone").textContent = `Layer "${layer.name}" has no joint yet. Click on the picture where it turns: the elbow, the hip, the hinge. To make a part out of a piece of this layer, select the piece and press ✂ above the layers.`; return; }
+  if (!joint) { $("jointNone").textContent = `Layer "${layer.name}" has no joint yet. Click on the picture where it turns: the elbow, the hip, the hinge. To make a part out of a piece of this layer, select the piece and press "part" above the layers.`; return; }
   const at = layer.at[S.frame], key = joint.keys[S.frame], parent = $("jointParent"), below = carried(S.layer);
   parent.replaceChildren(new Option("nothing", ""));
   S.doc.layers.forEach((other, n) => { if (other.joint && !below.includes(n)) parent.append(new Option(other.name, n)); });
