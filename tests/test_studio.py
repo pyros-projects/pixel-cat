@@ -176,7 +176,8 @@ class Projects(unittest.TestCase):
         p.save(self.folder / "a.pixelcat")
         data = json.loads((self.folder / "a.pixelcat").read_text())
         self.assertEqual((data["format"], data["width"], data["height"], len(data["frames"])), ("pixel-cat project", 16, 12, 2))
-        with Image.open(__import__("io").BytesIO(base64.b64decode(data["layers"][0]["cels"][0]))) as cel:
+        self.assertEqual((data["version"], data["layers"][0]["cels"], len(data["pictures"])), (2, [0, 0], 1))   # the copied frame shows the same picture
+        with Image.open(io.BytesIO(base64.b64decode(data["pictures"][0]))) as cel:
             self.assertEqual(cel.size, (16, 12))
         again = Project.load(self.folder / "a.pixelcat")
         self.assertTrue((again.composite(1) == p.composite(1)).all())
@@ -184,6 +185,34 @@ class Projects(unittest.TestCase):
         (self.folder / "b.pixelcat").write_text("{}")
         with self.assertRaisesRegex(ValueError, "not a pixel-cat project"):
             Project.load(self.folder / "b.pixelcat")
+
+    def test_a_held_drawing_is_stored_once(self):
+        rng = np.random.default_rng(3)
+        drawing = np.dstack([rng.integers(0, 256, (64, 64, 3)), np.full((64, 64), 255)]).astype(np.uint8)   # noise: a PNG cannot make it small
+        one = Project.from_frames([drawing], [100])
+        one.save(self.folder / "one.pixelcat")
+        held = Project.from_frames([drawing], [100])
+        held.apply({"op": "add-frame", "copy": 0, "count": 29})                    # the same drawing on thirty frames
+        held.apply({"op": "add-layer", "name": "Twice"})
+        held.apply({"op": "set-cel", "layer": 1, "frame": 4, "png": base64.b64encode(png_bytes(drawing)).decode()})   # and once more, drawn anew
+        held.save(self.folder / "held.pixelcat")
+        data = json.loads((self.folder / "held.pixelcat").read_text())
+        self.assertEqual((len(data["pictures"]), data["layers"][0]["cels"], data["layers"][1]["cels"][3:6]), (1, [0] * 30, [None, 0, None]))
+        self.assertLess((self.folder / "held.pixelcat").stat().st_size, 1.1 * (self.folder / "one.pixelcat").stat().st_size)
+        again = Project.load(self.folder / "held.pixelcat")
+        self.assertTrue(all((again.composite(f) == drawing).all() for f in (0, 4, 29)))
+        self.assertIs(again.layers[0]["cels"][0], again.layers[0]["cels"][29])     # opened once as well
+        # a change to one frame leaves the others alone, and only the new picture is added
+        again.apply({"op": "draw", "frame": 7, "color": "#ff0000", "points": [[0, 0]]})
+        changed = again.to_json()
+        self.assertEqual((len(changed["pictures"]), changed["layers"][0]["cels"][6:9]), (2, [0, 1, 0]))
+        self.assertEqual((tuple(again.composite(7)[0, 0]), tuple(again.composite(8)[0, 0])), ((255, 0, 0, 255), tuple(drawing[0, 0])))
+        # a file of version 1, with the PNG in every cel, opens as before
+        old = dict(changed, version=1, layers=[dict(layer, cels=[None if c is None else changed["pictures"][c] for c in layer["cels"]]) for layer in changed["layers"]])
+        del old["pictures"]
+        self.assertTrue(all((Project.from_json(old).composite(f) == again.composite(f)).all() for f in range(30)))
+        with self.assertRaisesRegex(ValueError, "number of one of the project's pictures"):
+            Project.from_json(dict(changed, layers=[dict(changed["layers"][0], cels=[5] * 30)]))
 
     def test_finishing_steps_and_resize_work_on_a_layer(self):
         p = self.project
@@ -510,10 +539,14 @@ class Studios(unittest.TestCase):
         self.assertIn("gave layer Layer 1 a joint", self.call("/api/op", {"op": {"op": "joint", "layer": 0, "pivot": [1.5, 3.5]}})["note"])
         self.call("/api/op", {"op": {"op": "pose", "layer": 0, "frame": 0, "angle": 0}})
         self.call("/api/op", {"op": {"op": "pose", "layer": 0, "frame": 1, "angle": 90}})
-        layer = self.call("/api/state")["doc"]["layers"][0]
+        doc = self.call("/api/state")["doc"]
+        layer = doc["layers"][0]
         self.assertEqual((layer["on"], layer["shown"][0], layer["at"][1]["angle"], layer["at"][1]["pivot"]), (None, None, 90, [1.5, 3.5]))
-        turned = np.array(Image.open(io.BytesIO(base64.b64decode(layer["shown"][1]))).convert("RGBA"))
+        turned = np.array(Image.open(io.BytesIO(base64.b64decode(doc["pictures"][layer["shown"][1]]))).convert("RGBA"))
         self.assertTrue((turned[3:8, 1, 0] == 255).all() and int((turned[..., 3] > 0).sum()) == 5)   # the bar points down now
+        self.call("/api/op", {"op": {"op": "add-frame", "copy": 1, "count": 2}})                   # the pose is held for two more frames
+        doc = self.call("/api/state")["doc"]
+        self.assertEqual((doc["layers"][0]["cels"], doc["layers"][0]["shown"], len(doc["pictures"])), ([0, 0, 0, 0], [None, 1, 1, 1], 2))   # each picture is sent once
         seen = Image.open(io.BytesIO(studio.call("/api/look?frame=1&scale=1", url=self.url, raw=True))).convert("RGBA")
         self.assertEqual(seen.getpixel((1, 7)), (255, 0, 0, 255))                                     # and that is what an agent sees
         old = json.loads((self.folder / "s.pixelcat").read_text())

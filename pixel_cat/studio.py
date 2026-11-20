@@ -49,6 +49,7 @@ class Studio:
         self.heard = 0.0                      # when an agent last waited for a message
         self.view = {"frame": 0, "layer": 0}  # what the person has open
         self.listening_shown = False
+        self.turned = {}                      # turned cels as PNG text, kept while they are shown
 
     # ------------------------------------------------------------ events
 
@@ -148,10 +149,12 @@ class Studio:
                     "doc": self.document(), "chat": self.chat[-200:]}
 
     def document(self):
-        """The project for the page. A jointed layer also says how it appears on every frame: `shown` holds
-        its turned cels (null where the drawing shows as it is), `at` its pose, `on` the layer it hangs on."""
+        """The project for the page, as it is saved: each picture once, cels as numbers. A jointed layer also
+        says how it appears on every frame: `shown` holds its turned cels, as numbers of further pictures (null
+        where the drawing shows as it is), `at` its pose, `on` the layer it hangs on."""
         project = self.project
         doc, count = project.to_json(), len(project.frames)
+        number, used = {text: n for n, text in enumerate(doc["pictures"])}, set()
         for index, (layer, out) in enumerate(zip(project.layers, doc["layers"])):
             if not layer.get("joint"):
                 continue
@@ -161,10 +164,22 @@ class Studio:
                 angle, x, y = joints.local(layer["joint"], frame, count)
                 pivot = pose @ [layer["joint"]["pivot"][0], layer["joint"]["pivot"][1], 1]
                 cel, picture = layer["cels"][frame], project.shown(index, frame)
-                out["shown"].append(None if picture is None or picture is cel else base64.b64encode(png_bytes(picture)).decode())
+                if picture is None or picture is cel:
+                    out["shown"].append(None)
+                else:                                                 # packed once, and sent once however many frames show it
+                    kept = self.turned.get(id(picture))
+                    if kept is None or kept[0] is not picture:
+                        kept = self.turned[id(picture)] = (picture, base64.b64encode(png_bytes(picture, small=False)).decode())
+                    used.add(id(picture))
+                    if kept[1] not in number:
+                        number[kept[1]] = len(doc["pictures"])
+                        doc["pictures"].append(kept[1])
+                    out["shown"].append(number[kept[1]])
                 out["at"].append({"angle": round(angle, 3), "x": round(x, 3), "y": round(y, 3), "turn": round(turn, 3),
                                   "pivot": [round(float(pivot[0]), 3), round(float(pivot[1]), 3)],
                                   "matrix": [round(float(v), 6) for v in (pose[0, 0], pose[1, 0], pose[0, 1], pose[1, 1], pose[0, 2], pose[1, 2])]})
+        for gone in set(self.turned) - used:
+            del self.turned[gone]
         return doc
 
     def say(self, who, text, **extra):

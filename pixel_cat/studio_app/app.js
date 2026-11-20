@@ -41,8 +41,10 @@ async function decode(data) {
 async function load(flash) {
   const state = await api("/api/state");
   S.doc = state.doc; S.meta = state.meta; S.known = Math.max(S.known, state.meta.rev);
-  S.cels = await Promise.all(state.doc.layers.map(layer => Promise.all(layer.cels.map(c => c ? decode(c) : null))));
-  S.shown = await Promise.all(state.doc.layers.map(layer => layer.shown ? Promise.all(layer.shown.map(c => c ? decode(c) : null)) : null));
+  const pictures = await Promise.all(state.doc.pictures.map(decode));   // each picture is opened once; every cel gets a canvas of its own, because drawing changes it
+  const own = n => { const c = blank(); c.getContext("2d").drawImage(pictures[n], 0, 0); return c; };
+  S.cels = state.doc.layers.map(layer => layer.cels.map(c => c == null ? null : own(c)));
+  S.shown = state.doc.layers.map(layer => layer.shown ? layer.shown.map(c => c == null ? null : pictures[c]) : null);   // turned cels are only looked at, so frames may share them
   S.frame = Math.min(S.frame, S.doc.frames.length - 1); S.layer = Math.min(S.layer, S.doc.layers.length - 1);
   view.width = S.doc.width; view.height = S.doc.height;
   if (!S.fitted) { fit(); S.fitted = true; }

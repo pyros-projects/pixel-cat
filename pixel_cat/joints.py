@@ -189,6 +189,11 @@ def warp(image, m, k=4):
         return image
     h, w = image.shape[:2]
     out = np.zeros_like(image)
+    if np.array_equal(m[:2, :2], np.eye(2)):                            # only moved: the art is copied over as it is
+        dx, dy = int(m[0, 2]), int(m[1, 2])
+        if abs(dx) < w and abs(dy) < h:
+            out[max(0, dy):h + min(0, dy), max(0, dx):w + min(0, dx)] = image[max(0, -dy):h - max(0, dy), max(0, -dx):w - max(0, dx)]
+        return out
     ys, xs = np.nonzero(image[..., 3] > 0)
     if not len(xs):
         return out

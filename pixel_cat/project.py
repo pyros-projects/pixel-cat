@@ -1,14 +1,17 @@
 """A project: pixel art with layers and frames, saved as one .pixelcat file.
 
-    {"format": "pixel-cat project", "version": 1, "width": 64, "height": 64,
+    {"format": "pixel-cat project", "version": 2, "width": 64, "height": 64,
      "palette": ["#101018", ...],
      "frames": [{"duration": 120}, ...],
+     "pictures": ["<PNG, base64>", ...],
      "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
-                 "cels": ["<PNG, base64>", null, ...]}]}
+                 "cels": [0, 0, null, 1, ...]}]}
 
-Layers are listed from the bottom up. Every layer holds one cel per frame; an empty cel is null. A cel is a
-PNG of the project's size, so any tool that reads JSON and PNG can read a project. A layer can carry a
-"joint": then its cels are the drawing at rest, and its keys turn and move it (see joints.py).
+Layers are listed from the bottom up. Every layer holds one cel per frame; an empty cel is null, a filled one
+is the number of its picture in "pictures". A picture is a PNG of the project's size, so any tool that reads
+JSON and PNG can read a project. A drawing that is held over several frames, or shows on several layers, is
+stored once. Files of version 1 held the PNG in the cel itself; they still open. A layer can carry a "joint":
+then its cels are the drawing at rest, and its keys turn and move it (see joints.py).
 
 Everything that changes a project goes through `apply`, one small JSON operation at a time. The studio's
 browser, an agent and a script all speak the same operations.
@@ -31,9 +34,11 @@ SUFFIX = ".pixelcat"
 LIMITS = {"side": 2048, "frames": 256, "layers": 32}
 
 
-def png_bytes(image):
+def png_bytes(image, small=True):
+    """A picture as a PNG. `small` packs it as tightly as it goes, for files; without it packing is several
+    times faster and a little larger, for pictures that are only passed on."""
     out = io.BytesIO()
-    Image.fromarray(image).save(out, format="PNG", optimize=True)
+    Image.fromarray(image).save(out, format="PNG", optimize=small)
     return out.getvalue()
 
 
@@ -62,6 +67,7 @@ class Project:
         self.palette = []
         self.locked = False              # a locked palette: whatever is drawn takes the nearest palette colour
         self._posed = {}                 # jointed cels as they appear, kept until their drawing or pose changes
+        self._pngs = {}                  # cels as PNG text, kept while the cel is in use: a cel never changes in place
 
     # ------------------------------------------------------------ building
 
@@ -129,15 +135,31 @@ class Project:
         other.palette = list(self.palette)
         other.locked = self.locked
         other._posed = self._posed
+        other._pngs = self._pngs
         return other
 
     # ------------------------------------------------------------ files
 
     def to_json(self):
-        return {"format": FORMAT, "version": 1, "width": self.width, "height": self.height, "palette": self.palette,
-                "locked": self.locked, "frames": self.frames,
-                "layers": [dict(layer, cels=[None if c is None else base64.b64encode(png_bytes(c)).decode() for c in layer["cels"]])
-                           for layer in self.layers]}
+        """The project as it is saved. Every picture is written once, however many cels show it."""
+        pictures, number, placed, layers = [], {}, {}, []
+        for layer in self.layers:
+            cels = []
+            for cel in layer["cels"]:
+                if cel is not None and id(cel) not in placed:
+                    kept = self._pngs.get(id(cel))
+                    if kept is None or kept[0] is not cel:
+                        kept = self._pngs[id(cel)] = (cel, base64.b64encode(png_bytes(cel)).decode())
+                    if kept[1] not in number:                         # two cels that look the same share a picture too
+                        number[kept[1]] = len(pictures)
+                        pictures.append(kept[1])
+                    placed[id(cel)] = number[kept[1]]
+                cels.append(None if cel is None else placed[id(cel)])
+            layers.append(dict(layer, cels=cels))
+        for gone in set(self._pngs) - set(placed):                    # what is no longer shown is not kept
+            del self._pngs[gone]
+        return {"format": FORMAT, "version": 2, "width": self.width, "height": self.height, "palette": self.palette,
+                "locked": self.locked, "frames": self.frames, "pictures": pictures, "layers": layers}
 
     @classmethod
     def from_json(cls, data):
@@ -150,10 +172,26 @@ class Project:
         project.palette = [c for c in data.get("palette", []) if edits.rgb(c)]
         project.locked = bool(data.get("locked", False))
         project.layers = []
+        pictures, opened = data.get("pictures", []), {}
+
+        def picture(entry):
+            """A cel of the file as an array: the number of a picture, or the PNG itself as version 1 wrote it.
+            Each picture is opened once, and the cels that show it share it."""
+            if entry is None:
+                return None
+            if isinstance(entry, int) and not isinstance(entry, bool) and isinstance(pictures, list) and 0 <= entry < len(pictures):
+                entry = pictures[entry]
+            if not isinstance(entry, str):
+                raise ValueError("A cel is the number of one of the project's pictures, or null")
+            if entry not in opened:
+                opened[entry] = image = from_png(base64.b64decode(entry), (project.width, project.height))
+                project._pngs[id(image)] = (image, entry)             # as it stands in the file, so saving need not pack it again
+            return opened[entry]
+
         for layer in data["layers"]:
             if len(layer["cels"]) != len(project.frames):
                 raise ValueError("Every layer needs one cel per frame")
-            cels = [None if c is None else from_png(base64.b64decode(c), (project.width, project.height)) for c in layer["cels"]]
+            cels = [picture(c) for c in layer["cels"]]
             taken = {known["id"] for known in project.layers}
             name = layer.get("id") if isinstance(layer.get("id"), str) and layer.get("id") not in taken else project._new_id()
             project.layers.append({"id": name, "name": str(layer.get("name", "Layer")), "visible": bool(layer.get("visible", True)),
@@ -186,9 +224,12 @@ class Project:
         if cel is None or not self.layers[layer].get("joint"):
             return cel
         pose = joints.world(self.layers, layer, frame, len(self.frames))[0]
-        mark, kept = tuple(np.round(pose, 6).ravel()), self._posed.get((self.layers[layer]["id"], frame))
+        name = self.layers[layer]["id"]
+        mark, kept = tuple(np.round(pose, 6).ravel()), self._posed.get((name, frame))
         if kept is None or kept[0] is not cel or kept[1] != mark:
-            kept = self._posed[(self.layers[layer]["id"], frame)] = (cel, mark, joints.warp(cel, pose))
+            before = self._posed.get((name, frame - 1))                # a pose that is held shows one picture
+            held = before is not None and before[0] is cel and before[1] == mark
+            kept = self._posed[(name, frame)] = (cel, mark, before[2] if held else joints.warp(cel, pose))
         return kept[2]
 
     def composite(self, frame, only=None):

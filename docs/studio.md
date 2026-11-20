@@ -109,14 +109,19 @@ pixel-cat op '{"op": "edits", "layer": 0, "steps": [{"op": "replace", "from": "#
 A project is one JSON file ending in `.pixelcat`:
 
 ```json
-{"format": "pixel-cat project", "version": 1, "width": 32, "height": 32,
+{"format": "pixel-cat project", "version": 2, "width": 32, "height": 32,
  "palette": ["#101018", "#f2a65a"],
- "frames": [{"duration": 120}, {"duration": 120}],
+ "frames": [{"duration": 120}, {"duration": 120}, {"duration": 120}],
+ "pictures": ["<PNG, base64>", "<PNG, base64>"],
  "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
-             "cels": ["<PNG, base64>", null]}]}
+             "cels": [0, 0, null]},
+            {"id": "L2", "name": "Ink", "visible": true, "locked": false, "opacity": 1,
+             "cels": [1, 1, 1]}]}
 ```
 
-Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is a PNG of the project's size. A project has up to 256 frames, 32 layers and 2048 cells per side.
+Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is the number of its picture in `pictures`, counted from 0. A picture is a PNG of the project's size. A drawing that is held over several frames, or shows on several layers, is stored once, so a long hold costs nothing. A project has up to 256 frames, 32 layers and 2048 cells per side.
+
+Files of version 1 carried the PNG in the cel itself (`"cels": ["<PNG, base64>", null]`). They still open, and are saved in the new form.
 
 A layer with a joint carries it in the file. Its cels are the drawing at rest; `keys` has one entry per frame, `null` where the frame lies between keys, and `parent` is the `id` of the layer it hangs on:
 
