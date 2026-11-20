@@ -123,7 +123,7 @@ One path, one object, or a list of them. The file extension chooses the format: 
 | `frame` | PNG only: the zero-based frame of an animation |
 | `format` | overrides the extension |
 
-Transparent cells stay transparent in PNG and GIF. In MP4 and WebM they are black.
+Transparent cells stay transparent in PNG and GIF. In MP4 and WebM they are black. A converted cell is either solid or empty: cells that are less than half covered become empty, the rest solid.
 
 ## The result
 

@@ -326,6 +326,15 @@ def theme(settings, palettes):
     return rgb
 
 
+def harden(image):
+    """Pixel art has no half-transparent cells: each one becomes solid or empty. A soft edge would otherwise
+    carry colours that no palette covers, and a 16-colour sprite would hold hundreds."""
+    empty = image[..., 3] < 128
+    image[empty] = 0
+    image[~empty, 3] = 255
+    return image
+
+
 def sample(source, settings):
     """The first half of a conversion: the source at its final size, colours untouched."""
     h, w = source.shape[:2]
@@ -333,10 +342,10 @@ def sample(source, settings):
         width, height = fit(w, h, math.inf if settings["grid"] == "native" else settings["grid"])
         image = SAMPLERS[settings["sampling"]](source, width, height)
         mirror(image, settings["symmetry"])
-        return image
+        return harden(image)
     scaled = max(1, half_up(h * settings["width"] / w))
     width, height = (max(1, half_up(n / settings["pixel"])) for n in (settings["width"], scaled))
-    return (sample_area if settings["mode"] == "artist" else sample_exact)(source, width, height)
+    return harden((sample_area if settings["mode"] == "artist" else sample_exact)(source, width, height))
 
 
 def finish(images, settings, colours, weights=None):

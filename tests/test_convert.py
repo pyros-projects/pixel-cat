@@ -101,6 +101,21 @@ class Stills(Case):
         self.assertTrue((out[:, :10, 3] == 0).all() and (out[:, 10:, 3] == 255).all())
         self.assertLessEqual(len(colours(out)), 7)                 # transparency takes one of the eight
 
+    def test_a_soft_edge_becomes_a_hard_one_and_stays_inside_the_colour_limit(self):
+        y, x = np.mgrid[0:120, 0:120]
+        reach = np.hypot(x - 60, y - 60)
+        image = np.zeros((120, 120, 4), dtype=np.uint8)
+        image[..., 0], image[..., 1], image[..., 2] = 60 + x, 200 - y, 90
+        image[..., 3] = np.clip((52 - reach) * 20, 0, 254)          # a disc with a soft rim that never reaches full opacity
+        for mode in ({"mode": "grid", "grid": 40, "sampling": "area", "colors": 8}, {"mode": "grid", "grid": 40, "sampling": "crisp", "colors": 8},
+                     {"mode": "faithful", "width": 240, "pixel": 6, "palette": "source", "colors": 8}, {"mode": "artist", "width": 240, "pixel": 6, "palette": "source", "colors": 8}):
+            self.run_job(input=self.save(image), convert=mode)
+            out = self.out()
+            self.assertEqual(set(np.unique(out[..., 3]).tolist()), {0, 255}, mode)
+            visible = out[out[..., 3] > 0]
+            self.assertLessEqual(len(np.unique(visible[:, :3], axis=0)), 7, mode)       # transparency takes the eighth
+            self.assertFalse(out[out[..., 3] == 0].any(), mode)                         # empty cells carry no colour
+
     def test_a_small_area_with_its_own_colour_keeps_it(self):
         y, x = np.mgrid[0:200, 0:200]
         image = np.dstack([20 + x // 8, 40 + y // 6, 150 + (x + y) // 8, np.full((200, 200), 255)]).astype(np.uint8)

@@ -50,17 +50,9 @@ def measure(image):
             "pixel_art": colours <= 256 and not soft_alpha and (block > 1 or max(w, h) <= 256)}
 
 
-def cut_alpha(image):
-    """Pixel art has no half-transparent pixels: each one becomes solid or empty."""
-    empty = image[..., 3] < 128
-    image[empty] = 0
-    image[~empty, 3] = 255
-    return image
-
-
 def sample(image, plan):
     out = stills.SAMPLERS[plan["sampling"]](image, plan["width"], plan["height"])
-    return out if plan["keep_pixels"] else cut_alpha(out)
+    return out if plan["keep_pixels"] else stills.harden(out)
 
 
 def colour_error(before, after):

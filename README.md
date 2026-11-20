@@ -137,7 +137,7 @@ Reducing colors follows the crowd, so a small red scarf in a blue picture can tu
 
 Animations convert frame by frame and share one palette. Still areas would flicker, because each frame rounds a little differently. A cell that barely changes over the whole loop is therefore held at one color (`--stability`, 0 switches it off), and real motion is left alone. `--frames` thins an animation out, `--speed` changes its pace, `--frame` exports a single frame as PNG.
 
-PNG and video outputs are enlarged to a size that is easy to look at. Pass `--scale 1` for one file pixel per cell.
+Converted art has hard edges: a cell is solid or empty, so a soft rim cannot smuggle colors past the limit. PNG and video outputs are enlarged to a size that is easy to look at. Pass `--scale 1` for one file pixel per cell.
 
 ## Sprites
 
