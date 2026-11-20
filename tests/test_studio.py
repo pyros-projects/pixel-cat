@@ -145,6 +145,33 @@ class Projects(unittest.TestCase):
         p.apply({"op": "append", "project": self.shot("Room", "#2850dc", opacity=0.5).to_json()})
         self.assertEqual((len(p.layers), len(p.frames)), (1, 2))
 
+    def test_an_appended_shot_keeps_its_order_from_back_to_front(self):
+        def shot(figure, colour):
+            """A wall, a figure in front of it, and a rail in front of the figure."""
+            p = Project(16, 12)
+            p.apply({"op": "set-layer", "layer": 0, "name": "Wall"})
+            p.apply({"op": "draw", "color": "#404040", "rect": [0, 0, 16, 12]})
+            p.apply({"op": "add-layer", "name": figure})
+            p.apply({"op": "draw", "layer": 1, "color": colour, "rect": [4, 2, 6, 9]})
+            p.apply({"op": "add-layer", "name": "Rail"})
+            p.apply({"op": "draw", "layer": 2, "color": "#c08040", "rect": [0, 8, 16, 2]})
+            return p
+
+        first, second = shot("Girl stands", "#c82828"), shot("Girl ducks", "#2850dc")
+        before, wanted = first.composite(0), second.composite(0)
+        first.apply({"op": "append", "project": second.to_json()})
+        self.assertEqual([l["name"] for l in first.layers], ["Wall", "Girl ducks", "Girl stands", "Rail"])   # the new figure went behind the rail
+        self.assertTrue((first.composite(0) == before).all() and (first.composite(1) == wanted).all())
+        self.assertEqual(tuple(first.composite(1)[8, 6]), (192, 128, 64, 255))                # the rail is in front of her
+        # a layer at the bottom of the incoming shot goes under the first one the two shots share
+        low = shot("Girl ducks", "#2850dc")
+        low.apply({"op": "add-layer", "name": "Night sky", "at": 0})
+        low.apply({"op": "draw", "layer": 0, "color": "#101030", "rect": [0, 0, 16, 12]})
+        third = shot("Girl stands", "#c82828")
+        third.apply({"op": "append", "project": low.to_json()})
+        self.assertEqual([l["name"] for l in third.layers], ["Night sky", "Wall", "Girl ducks", "Girl stands", "Rail"])
+        self.assertTrue((third.composite(1) == low.composite(0)).all())
+
     def test_a_stroke_from_the_page_leaves_soft_cells_as_they_were(self):
         rng = np.random.default_rng(8)
         soft = np.zeros((12, 16, 4), dtype=np.uint8)

@@ -662,16 +662,27 @@ class Project:
             self._order(list(range(frames)) + [None] * len(other.frames))
             for at, frame in enumerate(other.frames):
                 self.frames[frames + at]["duration"] = frame["duration"]
-            taken, added = set(), 0
             alike = lambda mine, theirs: all(mine[name] == theirs[name] for name in ("name", "visible", "locked", "opacity"))   # noqa: E731
-            for layer in other.layers:                                # onto a layer that shows the same way, or onto a new one
-                home = next((i for i, mine in enumerate(self.layers) if alike(mine, layer) and not mine.get("joint") and i not in taken), None)
+            # An incoming layer joins one of ours of the same name that shows the same way, but only one further
+            # up than the layer before it went: the shot keeps its order from back to front. A layer that finds
+            # none becomes a new one right above the layer before it.
+            homes, last = [], -1
+            for layer in other.layers:
+                at = next((i for i in range(last + 1, len(self.layers)) if alike(self.layers[i], layer) and not self.layers[i].get("joint")), None)
+                homes.append(None if at is None else self.layers[at])
+                last = last if at is None else at
+            added = sum(home is None for home in homes)
+            if len(self.layers) + added > LIMITS["layers"]:
+                raise ValueError("A project holds up to 32 layers")
+            where = lambda wanted: next(i for i, mine in enumerate(self.layers) if mine is wanted)   # noqa: E731
+            shared = next((home for home in homes if home is not None), None)
+            above = len(self.layers) if shared is None else where(shared)     # new layers at the bottom of the shot go under the first shared one
+            for layer, home in zip(other.layers, homes):
                 if home is None:
-                    if len(self.layers) >= LIMITS["layers"]:
-                        raise ValueError("A project holds up to 32 layers")
-                    self.layers.append(dict(self._layer(layer["name"]), visible=layer["visible"], locked=layer["locked"], opacity=layer["opacity"]))
-                    home, added = len(self.layers) - 1, added + 1
-                taken.add(home)
+                    home = dict(self._layer(layer["name"]), visible=layer["visible"], locked=layer["locked"], opacity=layer["opacity"])
+                    self.layers.insert(above, home)
+                above = where(home) + 1
+                home = above - 1
                 for at, cel in enumerate(layer["cels"]):
                     if cel is not None:
                         canvas = self.blank()
