@@ -39,7 +39,7 @@ A layer can turn around a pivot, and it can hang on another layer: a hand on a f
 
 `examples/projects/lamp.pixelcat` is this lamp: four drawings, three joints in a chain, a light that hangs on the shade, and two poses.
 
-1. Put each part on a layer of its own. From a flat drawing: select a piece (box, lasso, polygon or the brush) and press ✂ above the layers. Its cells move to a new layer with a joint, on every frame, and the next click on the picture says where it turns. Where the piece was, the layer below is now empty: paint in what should show there when the part moves, or cover the joint.
+1. Put each part on a layer of its own. From a flat drawing: select a piece (box, lasso, polygon or the brush) and press "part" above the layers. Its cells move to a new layer with a joint, on every frame, and the next click on the picture says where it turns. Where the piece was, the layer below is now empty: paint in what should show there when the part moves, or cover the joint.
 2. Pick the pose tool (`J`), pick the part's layer and click where it turns: the elbow, the hip, the hinge. That is its pivot. The drawing of the frame you are on is copied to every frame that has none.
 3. Under "Hangs on", choose the part that carries it. Hang the parts on each other before you pose them.
 4. Go to a frame and drag on the picture to turn the part; Shift turns in steps of 15°, Alt+drag moves it by whole cells. Each change sets a key on that frame, marked by a small diamond in the timeline. Whatever hangs on the part comes along.
