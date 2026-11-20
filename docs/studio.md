@@ -20,6 +20,7 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 - **Locked palette:** "lock" next to the palette. From then on whatever is drawn, filled or brought in takes its nearest palette colour.
 - **Hold selection:** a spot that flickers next to motion you want to keep. Select it, go to the frame where it looks right, and press "hold selection". The studio first shows how many cells would change and marks them in every frame you step through; nothing happens until you press Apply.
 - **Check:** looks through all frames for flicker, stray fragments, holes and colours outside the palette, marks them on the canvas and lists the areas where they gather. "select" turns an area into the selection, ready for "hold selection" or a fix by hand. The list updates after every change.
+- **Clean up:** thin lines to one cell and close breaks in them, remove halos beside lines, loose bits at the edge, or specks; on this frame or all, and only inside the selection when there is one. "Show what it would do" puts the result on the canvas with every changed cell marked; "show before" flips back. Nothing changes until you press Apply.
 - **Import:** drop a picture, a GIF or a video on the canvas. It is converted first: to fit the canvas, the way pixel-cat recommends, or not at all. It lands on a new layer, after the last frame, or in place of the project.
 - **Export:** PNG of the frame, GIF, MP4, WebM, or the project file.
 - **Undo** (Ctrl+Z) and Redo cover everything, also what the agent did. The top bar names the last change and who made it.

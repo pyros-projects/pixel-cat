@@ -197,8 +197,58 @@ def hold(images, step):
     return images
 
 
+def thin(images, step):
+    """Thin drawn lines to one cell; with `gap`, close breaks of up to three cells. Lines are dark cells, or
+    cells near `color`; only what is at most `width` cells thick counts as a line."""
+    from . import lines
+
+    keys(step, {"op", "color", "tolerance", "width", "gap"}, "thin")
+    colour = rgb(step["color"]) if step.get("color") else None
+    tolerance, width = integer(step.get("tolerance", 28), 0, 180, "tolerance"), integer(step.get("width", 4), 2, 8, "width")
+    gap = integer(step.get("gap", 0), 0, 3, "gap")
+    return [lines.thin(image, colour, tolerance, width, gap) for image in images]
+
+
+def halo(images, step):
+    """Remove the thin rim of in-between colour beside dark lines. `strength`: gentle or stronger."""
+    from . import lines
+
+    keys(step, {"op", "strength", "width"}, "halo")
+    return [lines.halo(image, step.get("strength", "gentle"), integer(step.get("width", 4), 2, 8, "width")) for image in images]
+
+
+def fringe(images, step):
+    """Remove loose bits at the edge of a cut-out drawing: groups of at most `max` cells of one colour whose
+    surroundings are mostly empty. `contact` is the share of empty cells around a group from which it goes."""
+    keys(step, {"op", "max", "contact"}, "fringe")
+    most, contact = integer(step.get("max", 4), 1, 12, "max"), float(step.get("contact", 0.5))
+    if not 0 < contact <= 1:
+        raise ValueError("contact is a share between 0 and 1")
+    out = []
+    for image in images:
+        image = image.copy()
+        h, w = image.shape[:2]
+        solid = image[..., 3] >= 128
+        flat = image.reshape(-1, 4)
+        for group in recommend.islands(stills.codes(image[..., :3]), solid, most):
+            members, around, empty = set(group.tolist()), 0, 0
+            for p in group:
+                y, x = divmod(int(p), w)
+                for dy, dx in recommend.RING:
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < h and 0 <= nx < w and ny * w + nx in members:
+                        continue
+                    around += 1
+                    empty += not (0 <= ny < h and 0 <= nx < w and solid[ny, nx])
+            if around and empty / around >= contact:
+                flat[group] = 0
+        out.append(image)
+    return out
+
+
 OPS = {"cutout": cutout, "trim": trim, "outline": outline, "pad": pad, "flip": flip, "shift": shift, "replace": replace, "clean": clean,
-       "hold": hold}
+       "hold": hold, "thin": thin, "halo": halo, "fringe": fringe}
+LIMITED = ("replace", "clean", "thin", "halo", "fringe")        # these also take an area and then change nothing outside it
 
 
 def apply(images, steps):
@@ -208,7 +258,14 @@ def apply(images, steps):
         if not isinstance(step, dict) or step.get("op") not in OPS:
             raise ValueError(f"Edit {number}: op is one of {', '.join(OPS)}")
         try:
-            images = OPS[step["op"]](images, step)
+            where = {k: step[k] for k in ("rect", "points", "cells") if k in step} if step["op"] in LIMITED else {}
+            if where:
+                done = OPS[step["op"]]([image.copy() for image in images], {k: v for k, v in step.items() if k not in where})
+                mask = area(where, images[0].shape[1], images[0].shape[0])
+                for image, changed in zip(images, done):
+                    image[mask] = changed[mask]
+            else:
+                images = OPS[step["op"]](images, step)
         except (ValueError, TypeError) as error:
             raise ValueError(f"Edit {number} ({step['op']}): {error}") from None
     return [np.ascontiguousarray(image) for image in images]

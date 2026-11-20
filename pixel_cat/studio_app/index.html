@@ -36,7 +36,18 @@
 <main id="stage">
   <canvas id="view"></canvas>
   <canvas id="over"></canvas>
-  <div id="proposal" class="proposal" hidden><span id="proposalText"></span><button id="proposalApply" class="primary">Apply</button><button id="proposalCancel">Cancel</button></div>
+  <div id="proposal" class="proposal" hidden><span id="proposalText"></span><button id="proposalFlip" hidden>show before</button><button id="proposalApply" class="primary">Apply</button><button id="proposalCancel">Cancel</button></div>
+  <div id="cleanup" class="findings" hidden>
+    <h3>Clean up <button id="cleanupClose" class="quiet" title="Close">&times;</button></h3>
+    <label>What <select id="tidyStep"><option value="thin">Thin lines to one cell</option><option value="halo">Remove halos beside lines</option><option value="fringe">Remove loose bits at the edge</option><option value="clean">Remove specks</option></select></label>
+    <div id="tidyThin"><label>Lines are <select id="tidyInk"><option value="dark">dark cells</option><option value="colour">cells of the current colour</option></select></label>
+      <label>Thickest line <select id="tidyWidth"><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select> cells</label>
+      <label>Close breaks <select id="tidyGap"><option value="0">no</option><option value="1" selected>up to 1 cell</option><option value="2">up to 2 cells</option><option value="3">up to 3 cells</option></select></label></div>
+    <div id="tidyStrength" hidden><label>Strength <select id="tidyHow"></select></label></div>
+    <label>On <select id="tidyFrames"><option value="this">this frame</option><option value="all">all frames</option></select></label>
+    <p id="tidyWhere"></p>
+    <button id="tidyGo" class="primary">Show what it would do</button>
+  </div>
   <div id="findings" class="findings" hidden></div>
   <div id="hint" class="hint" hidden>Draw, drop a picture here, or ask the agent in the chat.</div>
   <div id="where" class="where"></div>
@@ -81,6 +92,7 @@
     <span class="gap"></span>
     <button id="hold" title="Make the selected area stand still: its cells are copied from this frame into the others">hold selection</button>
     <button id="check" title="Look for flicker, stray fragments, holes and colours outside the palette">check</button>
+    <button id="tidy" title="Repair lines, remove halos, loose bits and specks, with a look at the result first">clean up</button>
   </div>
   <div id="timeline" class="timeline"></div>
 </footer>

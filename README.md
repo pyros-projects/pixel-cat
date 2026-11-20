@@ -151,7 +151,7 @@ Converted art has hard edges: a cell is solid or empty. `--alpha soft` keeps the
 uv run pixel-cat convert icon.png -o sprite.png --mode grid --grid 64 --sampling ink --colors 12 --cutout --trim --outline "#101018"
 ```
 
-`--cutout` makes the background transparent, `--trim` crops to the drawing and `--outline` draws a rim around it. A recipe has more finishing steps under `edits`: pad, flip, shift, replace a color, and clean specks. [Finishing steps](docs/recipes.md#edits)
+`--cutout` makes the background transparent, `--trim` crops to the drawing and `--outline` draws a rim around it. A recipe has more finishing steps under `edits`: pad, flip, shift, replace a color, clean specks, thin lines to one cell and close breaks in them, remove halos beside lines and loose bits at the edge. [Finishing steps](docs/recipes.md#edits)
 
 ## Loops from a still
 

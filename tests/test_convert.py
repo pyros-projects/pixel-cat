@@ -407,6 +407,66 @@ class Edits(Case):
         self.run_job(input=self.save(image), convert={"mode": "grid", "grid": "native", "colors": 8}, edits=[{"op": "clean"}])
         self.assertEqual(colours(self.out()), {"#5078c8", "#faf078"})
 
+    def drawing(self):
+        """A light field with a dark line three cells thick, as a drawn outline often arrives."""
+        image = np.full((40, 60, 4), 255, dtype=np.uint8)
+        image[..., :3] = (230, 200, 120)
+        image[18:21, 5:55, :3] = (20, 20, 30)
+        return image
+
+    def lines_of(self, image):
+        return (image[..., :3] == (20, 20, 30)).all(axis=2)
+
+    def native(self, image, *steps):
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": "native", "colors": 256}, edits=list(steps))
+        return self.out()
+
+    def test_a_thick_line_is_thinned_to_one_cell_and_stays_whole(self):
+        out = self.native(self.drawing(), {"op": "thin"})
+        line = self.lines_of(out)
+        self.assertTrue((line.sum(axis=0)[8:52] == 1).all())        # one cell thick along its length
+        self.assertEqual(colours(out), {"#e6c878", "#14141e"})      # what was peeled off took the field's colour
+        columns = np.flatnonzero(line.any(axis=0))
+        self.assertEqual(len(columns), columns[-1] - columns[0] + 1)   # and no break in it
+        broad = self.drawing()
+        broad[5:16, 5:20, :3] = (20, 20, 30)                        # a dark area is no line: it stays as it is
+        broad[30:32, 40:43, :3] = (20, 20, 30)                      # and neither is an eye
+        kept = self.lines_of(self.native(broad, {"op": "thin"}))
+        self.assertEqual((int(kept[5:16, 5:20].sum()), int(kept[30:32, 40:43].sum())), (11 * 15, 6))
+
+    def test_a_break_in_a_line_is_closed_up_to_the_gap_allowed(self):
+        image = np.full((20, 40, 4), 255, dtype=np.uint8)
+        image[..., :3] = (230, 200, 120)
+        image[10, 4:36, :3] = (20, 20, 30)
+        image[10, 18:20, :3] = (230, 200, 120)                      # two cells are missing
+        self.assertEqual(int(self.lines_of(self.native(image, {"op": "thin", "gap": 1}))[10, 4:36].sum()), 30)
+        self.assertEqual(int(self.lines_of(self.native(image, {"op": "thin", "gap": 2}))[10, 4:36].sum()), 32)
+
+    def test_the_rim_beside_a_line_goes_and_the_area_behind_stays(self):
+        image = np.full((30, 30, 4), 255, dtype=np.uint8)
+        image[..., :3] = (240, 220, 160)
+        image[:, 14, :3] = (20, 20, 30)
+        image[:, 13, :3] = (130, 120, 95)                           # halfway between line and field
+        image[:, 15, :3] = (130, 120, 95)
+        out = self.native(image, {"op": "halo"})
+        self.assertEqual(colours(out), {"#f0dca0", "#14141e"})
+        self.assertTrue(self.lines_of(out)[:, 14].all())
+
+    def test_loose_bits_at_the_edge_go_and_details_inside_stay(self):
+        image = np.zeros((30, 30, 4), dtype=np.uint8)
+        image[8:22, 8:22] = (200, 60, 60, 255)
+        image[4, 4:6] = (90, 90, 90, 255)                           # a loose bit out in the open
+        image[14, 14] = (250, 250, 250, 255)                        # a highlight inside the drawing
+        out = self.native(image, {"op": "fringe"})
+        self.assertEqual(colours(out), {"#c83c3c", "#fafafa"})
+        self.assertEqual(int((out[..., 3] > 0).sum()), 14 * 14)
+
+    def test_a_cleanup_step_can_be_kept_to_an_area(self):
+        out = self.native(self.drawing(), {"op": "thin", "rect": [0, 0, 30, 40]})
+        line = self.lines_of(out)
+        self.assertTrue((line.sum(axis=0)[8:28] == 1).all())        # thinned on the left
+        self.assertTrue((line.sum(axis=0)[32:52] == 3).all())       # untouched on the right
+
     def test_a_wrong_step_names_itself(self):
         with self.assertRaisesRegex(ValueError, "Edit 2 .outline.: color"):
             self.edit({"op": "cutout"}, {"op": "outline", "color": "red"})

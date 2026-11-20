@@ -71,7 +71,8 @@ function paintFrame(ctx, frame, alpha) {
   S.doc.layers.forEach((layer, i) => {
     if (!layer.visible) return;
     ctx.globalAlpha = alpha * layer.opacity;
-    if (S.cels[i][frame]) ctx.drawImage(S.cels[i][frame], 0, 0);
+    const tried = S.proposal && S.proposal.after && !S.proposal.before && i === S.proposal.layer && alpha === 1 ? S.proposal.after[frame] : null;
+    if (tried) ctx.drawImage(tried, 0, 0); else if (S.cels[i][frame]) ctx.drawImage(S.cels[i][frame], 0, 0);
     if (S.float && i === S.layer && frame === S.frame && alpha === 1) ctx.drawImage(S.float.canvas, S.float.x, S.float.y);
   });
   ctx.globalAlpha = 1;
@@ -441,7 +442,16 @@ function propose(text, marks, apply) {       // marks: per frame, the cells that
   const b = document.createElement("b"); b.textContent = total ? `${total} cell${total > 1 ? "s" : ""} change in ${frames} frame${frames > 1 ? "s" : ""}.` : "Nothing would change."; $("proposalText").append(b, total ? " Step through the frames to see them." : "");
   $("proposalApply").disabled = !total; $("proposal").hidden = false; overlay();
 }
-function endProposal() { S.proposal = null; $("proposal").hidden = true; overlay(); }
+function endProposal() { S.proposal = null; $("proposal").hidden = true; $("proposalFlip").hidden = true; draw(); }
+$("proposalFlip").onclick = () => { S.proposal.before = !S.proposal.before; $("proposalFlip").textContent = S.proposal.before ? "show after" : "show before"; draw(); };
+async function proposeOp(text, operation) {   // ask the server what an operation would do, and show that first
+  drop();
+  let seen; try { seen = await api("/api/preview", { op: operation }); } catch (error) { return fail(error); }
+  const after = {}; for (const [frame, png] of Object.entries(seen.after)) after[frame] = await decode(png);
+  propose(text, seen.marks, () => op(operation));
+  S.proposal.layer = seen.layer; S.proposal.after = after; S.proposal.before = false;
+  $("proposalFlip").hidden = !Object.keys(after).length; $("proposalFlip").textContent = "show before"; draw();
+}
 $("proposalApply").onclick = async () => { const run = S.proposal.apply; endProposal(); await run(); };
 $("proposalCancel").onclick = endProposal;
 function proposeHold() {
@@ -480,6 +490,26 @@ async function runCheck() {
   }
   box.hidden = false; overlay();
 }
+
+// ---------------------------------------------------------------- clean up, with a look at the result first
+function tidyForm() {
+  const step = $("tidyStep").value; $("tidyThin").hidden = step !== "thin"; $("tidyStrength").hidden = step === "thin";
+  const how = $("tidyHow"); how.replaceChildren();
+  const choices = step === "halo" ? [["gentle", "gentle"], ["stronger", "stronger"]] : step === "fringe" ? [["2", "bits up to 2 cells"], ["4", "bits up to 4 cells"], ["8", "bits up to 8 cells"]] : [["gentle", "gentle"], ["balanced", "balanced"], ["strong", "strong"]];
+  for (const [value, label] of choices) { const o = document.createElement("option"); o.value = value; o.textContent = label; how.append(o); }
+  if (step !== "halo") how.selectedIndex = 1;
+  $("tidyWhere").textContent = S.sel ? "Only inside the selection." : "On the whole layer. Select an area first to keep it to that.";
+}
+$("tidy").onclick = () => { $("cleanup").hidden = !$("cleanup").hidden; $("findings").hidden = true; tidyForm(); };
+$("cleanupClose").onclick = () => $("cleanup").hidden = true; $("tidyStep").onchange = tidyForm;
+$("tidyGo").onclick = () => {
+  const kind = $("tidyStep").value, step = { op: kind };
+  if (kind === "thin") { step.width = +$("tidyWidth").value; step.gap = +$("tidyGap").value; if ($("tidyInk").value === "colour") step.color = S.colour; }
+  else if (kind === "fringe") step.max = +$("tidyHow").value; else step.strength = $("tidyHow").value;
+  if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] });
+  const all = $("tidyFrames").value === "all";
+  proposeOp(`${$("tidyStep").selectedOptions[0].textContent}, on ${all ? "all frames" : "frame " + (S.frame + 1)}.`, { op: "edits", layer: S.layer, frames: all ? "all" : [S.frame], steps: [step] });
+};
 
 // ---------------------------------------------------------------- chat
 function showMessage(message) {

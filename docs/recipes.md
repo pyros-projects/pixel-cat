@@ -76,7 +76,12 @@ Finishing steps on the converted art, applied in order to every frame.
 | `shift` | moves the picture by whole cells and wraps around, for checking how a tile repeats | `x`, `y` |
 | `replace` | turns one color or a list of colors into another | `from`, `to`, `tolerance` |
 | `clean` | removes specks: small enclosed groups of cells join the color around them when the two look alike | `strength`: `gentle`, `balanced` or `strong` |
+| `thin` | thins drawn lines to one cell and closes small breaks. Lines are dark cells, or cells near `color`. Broad dark areas and small shapes such as an eye stay as they are. | `color`, `tolerance` (0 to 180, default 28), `width`: the thickest line in cells (2 to 8, default 4), `gap`: close breaks of up to 1, 2 or 3 cells (default 0) |
+| `halo` | removes the thin rim of in-between color that smooth scaling leaves beside dark lines. Run it before `thin`. | `strength`: `gentle` or `stronger` |
+| `fringe` | removes loose bits at the edge of a cut-out drawing: small groups of one color with mostly empty cells around them | `max`: the largest group in cells (default 4), `contact`: the share of empty surroundings from which a group goes (default 0.5) |
 | `hold` | makes an area of an animation stand still: its cells are copied from one frame into the others, and everything outside keeps moving | `from` (the frame to copy, default 0), `frames` (`"all"` or a list), and the area: `rect` `[x, y, width, height]`, `points` (a polygon) or `cells` (a list of `[x, y]`), all in cells |
+
+`replace`, `clean`, `thin`, `halo` and `fringe` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it.
 
 A step with a wrong setting stops the job and names itself: `Edit 2 (outline): color is a colour written as #RRGGBB`. In a recipe with both `edits` and `loop`, the edits come first.
 

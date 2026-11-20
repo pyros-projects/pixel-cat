@@ -87,6 +87,26 @@ class Studio:
         self.publish({"type": "changed", "rev": self.rev, "by": by, "note": note})
         return {"rev": self.rev, "note": note}
 
+    def preview(self, op):
+        """What an operation would do, without doing it: per frame the cells that would change, and the
+        changed cels of its layer."""
+        with self.lock:
+            trial = self.project.snapshot()
+            note = trial.apply(op)
+            layer = int(op.get("layer", 0))
+            marks, after = [], {}
+            for frame in range(len(self.project.frames)):
+                if frame >= len(trial.frames) or layer >= len(trial.layers) or layer >= len(self.project.layers) \
+                        or trial.width != self.project.width or trial.height != self.project.height:
+                    marks.append([])
+                    continue
+                old, new = self.project.cel(layer, frame), trial.cel(layer, frame)
+                ys, xs = (old != new).any(axis=2).nonzero()
+                marks.append([[int(x), int(y)] for x, y in zip(xs[:20000], ys[:20000])])
+                if len(xs):
+                    after[str(frame)] = base64.b64encode(png_bytes(new)).decode()
+        return {"note": note, "layer": layer, "marks": marks, "after": after}
+
     def step(self, back, by):
         with self.lock:
             source, target = (self.undo, self.redo) if back else (self.redo, self.undo)
@@ -245,6 +265,8 @@ def handler_for(studio):
                 by = "agent" if data.get("by") == "agent" else "you"
                 if url.path == "/api/op":
                     return self.send(200, studio.change(data["op"], by))
+                if url.path == "/api/preview":
+                    return self.send(200, studio.preview(data["op"]))
                 if url.path == "/api/undo":
                     return self.send(200, studio.step(True, by))
                 if url.path == "/api/redo":

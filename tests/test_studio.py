@@ -189,6 +189,15 @@ class Studios(unittest.TestCase):
         self.call("/api/redo", {})
         self.assertTrue(Project.load(self.folder / "s.pixelcat").composite(0)[..., 3].any())
 
+    def test_a_preview_shows_what_would_change_and_changes_nothing(self):
+        self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [0, 0, 8, 8]}})
+        self.call("/api/op", {"op": {"op": "add-frame", "copy": 0}})
+        self.call("/api/op", {"op": {"op": "draw", "frame": 1, "color": "#00ff00", "rect": [2, 2, 2, 2]}})
+        seen = self.call("/api/preview", {"op": {"op": "hold", "layer": 0, "from": 0, "rect": [0, 0, 8, 8]}})
+        self.assertEqual((len(seen["marks"][0]), len(seen["marks"][1]), sorted(seen["after"])), (0, 4, ["1"]))
+        self.assertEqual(self.call("/api/state")["meta"]["rev"], 3)                       # nothing was done
+        self.assertEqual(tuple(Project.load(self.folder / "s.pixelcat").composite(1)[2, 2]), (0, 255, 0, 255))
+
     def test_a_failed_operation_changes_nothing_and_says_why(self):
         with self.assertRaisesRegex(ValueError, "Unknown operation"):
             self.call("/api/op", {"op": {"op": "sharpen"}})

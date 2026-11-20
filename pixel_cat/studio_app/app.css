@@ -131,3 +131,6 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .findings .area button { padding: 1px 8px; }
 button.quiet.active { color: var(--ember); border-color: var(--ember-deep); }
 .current { flex-wrap: wrap; }
+#cleanup label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; color: var(--quiet); }
+#cleanup select { max-width: 170px; }
+#cleanup #tidyGo { width: 100%; margin-top: 6px; }
