@@ -530,7 +530,8 @@ function tidyForm() {
   const choices = step === "halo" ? [["gentle", "gentle"], ["stronger", "stronger"]] : step === "fringe" ? [["2", "bits up to 2 cells"], ["4", "bits up to 4 cells"], ["8", "bits up to 8 cells"]] : [["gentle", "gentle"], ["balanced", "balanced"], ["strong", "strong"]];
   for (const [value, label] of choices) { const o = document.createElement("option"); o.value = value; o.textContent = label; how.append(o); }
   if (step !== "halo") how.selectedIndex = 1;
-  $("tidyWhere").textContent = S.sel ? "Only inside the selection." : "On the whole layer. Select an area first to keep it to that.";
+  $("tidyArea").hidden = !S.sel; $("tidyWhere").hidden = !!S.sel;
+  $("tidyWhere").textContent = "On the whole layer. Select an area first to keep the step to it, or to protect it.";
 }
 $("tidy").onclick = () => { panel("cleanup", $("cleanup").hidden); tidyForm(); };
 $("cleanupClose").onclick = () => panel("cleanup", false); $("tidyStep").onchange = tidyForm;
@@ -538,7 +539,7 @@ $("tidyGo").onclick = () => {
   const kind = $("tidyStep").value, step = { op: kind };
   if (kind === "thin") { step.width = +$("tidyWidth").value; step.gap = +$("tidyGap").value; if ($("tidyInk").value === "colour") step.color = S.colour; }
   else if (kind === "fringe") step.max = +$("tidyHow").value; else step.strength = $("tidyHow").value;
-  if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] });
+  if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] }, $("tidyProtect").value === "outside" ? { protect: true } : {});
   const all = $("tidyFrames").value === "all";
   proposeOp(`${$("tidyStep").selectedOptions[0].textContent}, on ${all ? "all frames" : "frame " + (S.frame + 1)}.`, { op: "edits", layer: S.layer, frames: all ? "all" : [S.frame], steps: [step] });
 };
@@ -633,6 +634,10 @@ $("colour").oninput = event => setColour(event.target.value);
 $("addColour").onclick = () => S.doc.palette.includes(S.colour) ? toast("That colour is in the palette already") : op({ op: "palette", colors: [...S.doc.palette, S.colour] });
 $("fromArt").onclick = () => op({ op: "palette-from-art" });
 $("lock").onclick = () => op({ op: "palette", lock: !S.doc.locked });
+api("/api/palettes").then(all => {            // the ready-made palettes, smallest first within their kind
+  for (const [name, colours] of Object.entries(all)) { const o = document.createElement("option"); o.value = name; o.textContent = `${name} (${colours.length})`; $("named").append(o); }
+}).catch(() => {});
+$("named").onchange = () => { const name = $("named").value; $("named").value = ""; if (name) op({ op: "palette", name }); };
 $("addLayer").onclick = async () => { const done = await op({ op: "add-layer", at: S.layer + 1 }); if (done) go(S.frame, S.layer + 1); };
 $("delLayer").onclick = () => op({ op: "remove-layer", layer: S.layer });
 $("mergeLayer").onclick = async () => { const done = await op({ op: "merge-down", layer: S.layer }); if (done) go(S.frame, S.layer - 1); };
@@ -674,12 +679,38 @@ $("importDialog").addEventListener("close", async () => {
   else settings.convert = { mode: "grid", grid: Math.max(S.doc.width, S.doc.height), sampling: $("importSampling").value, colors: +$("importColours").value };
   if ($("importCutout").checked) settings.edits = [{ op: "cutout" }];
   toast("Converting " + incoming.name + " …"); drop(); S.pending++;
+  const how = $("importHow").value;
   try {
     const response = await fetch(`/api/import?name=${encodeURIComponent(incoming.name)}&how=${$("importHow").value}&settings=${encodeURIComponent(JSON.stringify(settings))}`, { method: "POST", body: incoming });
     const done = await response.json(); if (!response.ok) throw new Error(done.error);
     S.known = Math.max(S.known, done.rev); S.fitted = false; await load(true);
+    if (how === "layer") { S.layer = S.doc.layers.length - 1; S.sel = null; setTool("move"); layers(); timeline(); context(); draw(); }   // in hand, ready to be moved into place
     toast(`${done.summary.width} × ${done.summary.height} cells, ${done.summary.frames} frame${done.summary.frames > 1 ? "s" : ""}, ${done.summary.colors} colours`);
   } catch (error) { fail(error); } finally { S.pending--; incoming = null; }
+});
+function pasteClip() {                      // the piece copied in the studio, floating where it came from
+  if (!S.clip || !usable()) return; drop();
+  const canvas = document.createElement("canvas"); canvas.width = S.clip.canvas.width; canvas.height = S.clip.canvas.height; canvas.getContext("2d").drawImage(S.clip.canvas, 0, 0);
+  S.float = { canvas, x: S.clip.x, y: S.clip.y, mask: S.clip.mask }; setTool("move"); draw();
+}
+async function sameAsClip(file) {           // is the picture on the clipboard the piece that was copied here?
+  if (!S.clip) return false;
+  try {
+    const picture = await createImageBitmap(file), mine = S.clip.canvas;
+    if (picture.width !== mine.width || picture.height !== mine.height) return false;
+    const other = document.createElement("canvas"); other.width = mine.width; other.height = mine.height; other.getContext("2d").drawImage(picture, 0, 0);
+    const a = mine.getContext("2d").getImageData(0, 0, mine.width, mine.height).data, b = other.getContext("2d").getImageData(0, 0, mine.width, mine.height).data;
+    for (let i = 0; i < a.length; i += 4) if (a[i + 3] !== b[i + 3] || (a[i + 3] && (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]))) return false;
+    return true;
+  } catch { return false; }
+}
+document.addEventListener("paste", async event => {
+  if (event.target.matches?.("input, textarea, select") || $("importDialog").open) return;
+  event.preventDefault();
+  const file = [...(event.clipboardData?.files || [])].find(f => f.type.startsWith("image/"));
+  if (!file || S.clipOnlyHere || await sameAsClip(file)) return pasteClip();
+  offer(new File([file], "picture from the clipboard.png", { type: file.type }));   // a picture from elsewhere comes in like a dropped one
+  try { const picture = await createImageBitmap(file); if (picture.width <= S.doc.width && picture.height <= S.doc.height) { $("importMode").value = "native"; $("importHow").value = "layer"; } } catch { /* the dialog's own choice stands */ }
 });
 stage.addEventListener("dragover", event => { event.preventDefault(); stage.classList.add("drop"); });
 stage.addEventListener("dragleave", () => stage.classList.remove("drop"));
@@ -692,13 +723,15 @@ document.addEventListener("keydown", event => {
   if (command && key === "y") { event.preventDefault(); return step("/api/redo"); }
   if (command && key === "c" && (S.sel || S.float)) {
     const area = S.float ? null : S.sel, canvas = document.createElement("canvas");
-    if (S.float) { canvas.width = S.float.canvas.width; canvas.height = S.float.canvas.height; canvas.getContext("2d").drawImage(S.float.canvas, 0, 0); S.clip = { canvas, x: S.float.x, y: S.float.y }; }
+    if (S.float) { canvas.width = S.float.canvas.width; canvas.height = S.float.canvas.height; canvas.getContext("2d").drawImage(S.float.canvas, 0, 0); S.clip = { canvas, x: S.float.x, y: S.float.y, mask: S.float.mask }; }
     else if (cel()) { S.clip = { canvas: cut(cel(), area, false), x: area.x, y: area.y, mask: area.mask }; }
+    else return;
+    S.clipOnlyHere = true;                  // until the system clipboard holds it too, a paste means this piece
+    try {
+      const picture = new Promise(done => S.clip.canvas.toBlob(done, "image/png"));
+      navigator.clipboard.write([new ClipboardItem({ "image/png": picture })]).then(() => { S.clipOnlyHere = false; }, () => {});
+    } catch { /* no clipboard access here: copy and paste still work inside the studio */ }
     return toast("Copied");
-  }
-  if (command && key === "v" && S.clip) {
-    if (!usable()) return; drop(); const canvas = document.createElement("canvas"); canvas.width = S.clip.canvas.width; canvas.height = S.clip.canvas.height; canvas.getContext("2d").drawImage(S.clip.canvas, 0, 0);
-    S.float = { canvas, x: S.clip.x, y: S.clip.y, mask: S.clip.mask }; setTool("move"); return draw();
   }
   if (command && key === "a") { event.preventDefault(); drop(); S.sel = { x: 0, y: 0, w: S.doc.width, h: S.doc.height }; context(); return draw(); }
   if (command && key === "d") { event.preventDefault(); drop(); S.sel = null; context(); return draw(); }

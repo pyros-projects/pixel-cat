@@ -14,10 +14,34 @@ from .project import SUFFIX, Project
 FORMATS = {".png": "png", ".gif": "gif", ".mp4": "mp4", ".webm": "webm", SUFFIX: "project"}
 
 
+def from_clipboard():
+    """Save the picture on the system clipboard to a file and return its path."""
+    import tempfile
+
+    from PIL import Image, ImageGrab
+
+    try:
+        found = ImageGrab.grabclipboard()
+    except Exception as error:                                    # no clipboard tool on this system, for example
+        raise ValueError(f"The clipboard cannot be read here: {error}") from None
+    if isinstance(found, list):                                   # files were copied: take the first one that exists
+        found = next((Path(p) for p in found if Path(p).is_file()), None)
+        if found is not None:
+            return found.resolve()
+    if not isinstance(found, Image.Image):
+        raise ValueError("There is no picture on the clipboard")
+    path = Path(tempfile.mkdtemp(prefix="pixel-cat-")) / "clipboard.png"
+    found.save(path)
+    return path
+
+
 def convert(job, base):
     """Everything up to the finished frames. Returns (input path, images, durations, display scale, summary)."""
     keys(job, {"input", "convert", "media", "sheet", "edits", "loop", "export"}, "recipe")
-    path = (Path(base) / job["input"]).resolve(strict=True)
+    if job.get("input") == "clipboard" and not (Path(base) / "clipboard").exists():
+        path = from_clipboard()
+    else:
+        path = (Path(base) / job["input"]).resolve(strict=True)
     is_project = path.suffix.lower() == SUFFIX
     if is_project and ("convert" in job or "media" in job or "sheet" in job):
         raise ValueError("A project already is pixel art. It takes edits, a loop and exports, no conversion.")

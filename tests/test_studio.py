@@ -209,6 +209,18 @@ class Studios(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "at least one region"):
             self.call("/api/loop", {"frame": 0, "loop": {"regions": []}})
 
+    def test_a_named_palette_can_be_taken_and_a_locked_project_follows_it(self):
+        self.call("/api/op", {"op": {"op": "draw", "color": "#3fa0e0", "rect": [0, 0, 8, 8]}})
+        self.assertIn("took the palette pico8 (16 colours)", self.call("/api/op", {"op": {"op": "palette", "name": "pico8"}})["note"])
+        self.assertEqual(tuple(Project.load(self.folder / "s.pixelcat").composite(0)[0, 0]), (63, 160, 224, 255))   # not locked: the art stays
+        self.call("/api/op", {"op": {"op": "palette", "lock": True}})
+        self.assertEqual(tuple(Project.load(self.folder / "s.pixelcat").composite(0)[0, 0]), (41, 173, 255, 255))   # pico8's blue
+        self.call("/api/op", {"op": {"op": "palette", "name": "gameboy"}})
+        self.assertIn("#%02x%02x%02x" % tuple(Project.load(self.folder / "s.pixelcat").composite(0)[0, 0][:3]), ("#0f380f", "#306230", "#8bac0f", "#9bbc0f"))
+        self.assertIn("painter48", self.call("/api/palettes"))
+        with self.assertRaisesRegex(Exception, "Palettes: gameboy"):
+            self.call("/api/op", {"op": {"op": "palette", "name": "nope"}})
+
     def test_a_preview_shows_what_would_change_and_changes_nothing(self):
         self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [0, 0, 8, 8]}})
         self.call("/api/op", {"op": {"op": "add-frame", "copy": 0}})

@@ -48,6 +48,7 @@
       <label>Close breaks <select id="tidyGap"><option value="0">no</option><option value="1" selected>up to 1 cell</option><option value="2">up to 2 cells</option><option value="3">up to 3 cells</option></select></label></div>
     <div id="tidyStrength" hidden><label>Strength <select id="tidyHow"></select></label></div>
     <label>On <select id="tidyFrames"><option value="this">this frame</option><option value="all">all frames</option></select></label>
+    <label id="tidyArea">Where <select id="tidyProtect"><option value="inside">only inside the selection</option><option value="outside">everywhere but the selection</option></select></label>
     <p id="tidyWhere"></p>
     <button id="tidyGo" class="primary">Show what it would do</button>
   </div>
@@ -72,7 +73,8 @@
     <div class="current"><input type="color" id="colour" value="#f2a65a" title="Current colour"><code id="hex">#f2a65a</code>
       <button id="addColour" class="quiet" title="Add this colour to the palette">+ palette</button>
       <button id="fromArt" class="quiet" title="Take the palette from the art">from art</button>
-      <button id="lock" class="quiet">lock</button></div>
+      <button id="lock" class="quiet">lock</button>
+      <select id="named" title="Take a ready-made palette"><option value="">ready-made …</option></select></div>
     <div id="palette" class="palette"></div>
   </section>
   <section class="layers">

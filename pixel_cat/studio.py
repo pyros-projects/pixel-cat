@@ -245,6 +245,9 @@ def handler_for(studio):
                     if query.get("as") == "json":
                         return self.send(200, {"project": str(studio.path), "viewing": view, **summary})
                     return self.send(200, png_bytes(frames.enlarge(image, max(1, min(32, int(query.get("scale", 8)))))), "image/png")
+                if url.path == "/api/palettes":
+                    from .palettes import PALETTES
+                    return self.send(200, PALETTES)
                 if url.path == "/api/check":
                     from . import check
                     with studio.lock:

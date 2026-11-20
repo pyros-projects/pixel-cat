@@ -323,7 +323,17 @@ class Project:
                 self.frames[at]["duration"] = integer(op.get("duration", 120), 10, 60000, "duration")
             return "changed the timing"
         if kind == "palette":
-            keys(op, {"op", "colors", "lock"}, "palette")
+            keys(op, {"op", "colors", "name", "lock"}, "palette")
+            note = "changed the palette"
+            if "name" in op:
+                from .palettes import PALETTES
+
+                if op["name"] not in PALETTES:
+                    raise ValueError("Palettes: " + ", ".join(PALETTES))
+                self.palette = list(PALETTES[op["name"]])
+                note = f"took the palette {op['name']} ({len(self.palette)} colours)"
+                if self.locked and "lock" not in op:              # a locked project follows its new palette
+                    op = {**op, "lock": True}
             if "colors" in op:
                 self.palette = ["#%02x%02x%02x" % tuple(edits.rgb(c)) for c in op["colors"]][:256]
             if "lock" in op:
@@ -333,8 +343,10 @@ class Project:
                 if self.locked:                                   # what is there already moves onto the palette too
                     for layer in self.layers:
                         layer["cels"] = [None if c is None else self.snap(c) for c in layer["cels"]]
+                if "name" in op:
+                    return note + (", and the art took its colours" if self.locked else "")
                 return "locked the palette" if self.locked else "unlocked the palette"
-            return "changed the palette"
+            return note
         if kind == "palette-from-art":
             found, counts, _ = stills.histogram([(self.composite(i), 1) for i in range(frames)])
             order = np.argsort(-counts)[:64]

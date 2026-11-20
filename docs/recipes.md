@@ -17,7 +17,7 @@ A recipe is one conversion job as JSON. `pixel-cat run recipe.json` executes it;
 
 ## `input`
 
-A still image (PNG, JPEG, WebP and whatever else Pillow reads), a GIF, or a video. Videos need FFmpeg on the PATH.
+A still image (PNG, JPEG, WebP and whatever else Pillow reads), a GIF, or a video. Videos need FFmpeg on the PATH. The word `clipboard` in place of a file takes the picture that is on the system clipboard.
 
 ## `convert`
 
@@ -36,7 +36,7 @@ A still image (PNG, JPEG, WebP and whatever else Pillow reads), a GIF, or a vide
 | `symmetry` | grid, faithful, artist | `off`, `left`, `right` | `off` |
 | `alpha` | grid, faithful, artist | `hard`: every cell solid or empty; `soft`: cells keep their transparency, for shadows and glows | `hard` |
 
-With `palette: "source"` the picture keeps its own colors, reduced to `colors`. With a palette name in faithful or artist mode, `colors` picks that many entries of the palette, spread over its whole range. `pixel-cat catalog` lists the palette names.
+With `palette: "source"` the picture keeps its own colors, reduced to `colors`. With a palette name in faithful or artist mode, `colors` picks that many entries of the palette, spread over its whole range. `pixel-cat catalog` lists the palette names. They run from 4 colors (`gameboy`) to the large ones with full shading ramps: `lantern32`, `painter48`, `meadow48`, `harbor48` and `spectrum64`.
 
 ## `media`
 
@@ -81,7 +81,7 @@ Finishing steps on the converted art, applied in order to every frame.
 | `fringe` | removes loose bits at the edge of a cut-out drawing: small groups of one color with mostly empty cells around them | `max`: the largest group in cells (default 4), `contact`: the share of empty surroundings from which a group goes (default 0.5) |
 | `hold` | makes an area of an animation stand still: its cells are copied from one frame into the others, and everything outside keeps moving | `from` (the frame to copy, default 0), `frames` (`"all"` or a list), and the area: `rect` `[x, y, width, height]`, `points` (a polygon) or `cells` (a list of `[x, y]`), all in cells |
 
-`replace`, `clean`, `thin`, `halo` and `fringe` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it.
+`replace`, `clean`, `thin`, `halo` and `fringe` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it. With `"protect": true` it is the other way round: nothing inside the area changes.
 
 A step with a wrong setting stops the job and names itself: `Edit 2 (outline): color is a colour written as #RRGGBB`. In a recipe with both `edits` and `loop`, the edits come first.
 

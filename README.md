@@ -106,6 +106,7 @@ uv run pixel-cat catalog
 uv run pixel-cat convert examples/images/potion.png --mode grid --grid 64 --sampling ink --colors 12 --scale 1 -o output/sprite.png
 uv run pixel-cat convert examples/images/lake.png --mode faithful --width 480 --pixel 4 --palette dusk16 -o output/dusk.png
 uv run pixel-cat convert examples/images/spin-sheet.png --sheet 4x2 --delay 80 --mode grid --grid 48 -o output/spin.gif
+uv run pixel-cat convert clipboard -o output/pasted.png        # the picture on the clipboard
 uv run pixel-cat run examples/recipes/bob.json
 ```
 
@@ -133,7 +134,7 @@ The stills above came out of one command each, with no settings chosen by hand. 
 | `faithful` | Samples on a regular grid of `--pixel`-sized cells and maps to the source colors, a named palette or your own colors. |
 | `artist` | Smooths areas of similar brightness, lifts the saturation and snaps to a palette. `--strength` sets how far regions merge. |
 
-Reducing colors follows the crowd, so a small red scarf in a blue picture can turn blue. pixel-cat checks for that: a small area with a color of its own keeps a palette entry. `--symmetry left` or `right` mirrors one half onto the other. `--palette` takes `source`, one of the 18 names from `pixel-cat catalog`, or a comma-separated list of `#RRGGBB` colors.
+Reducing colors follows the crowd, so a small red scarf in a blue picture can turn blue. pixel-cat checks for that: a small area with a color of its own keeps a palette entry. `--symmetry left` or `right` mirrors one half onto the other. `--palette` takes `source`, one of the 23 names from `pixel-cat catalog` (4 to 64 colors), or a comma-separated list of `#RRGGBB` colors.
 
 Animations convert frame by frame and share one palette. Still areas would flicker, because each frame rounds a little differently. A cell that barely changes over the whole loop is therefore held at one color (`--stability`, 0 switches it off), and real motion is left alone. `pixel-cat check walk.gif` looks for flicker, stray fragments and holes and names the areas where they gather. When one spot flickers next to motion you want to keep, `--hold x,y,width,height` makes just that area stand still. `--frames` thins an animation out, `--speed` changes its pace, `--frame` exports a single frame as PNG.
 

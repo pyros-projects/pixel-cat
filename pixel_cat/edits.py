@@ -248,7 +248,8 @@ def fringe(images, step):
 
 OPS = {"cutout": cutout, "trim": trim, "outline": outline, "pad": pad, "flip": flip, "shift": shift, "replace": replace, "clean": clean,
        "hold": hold, "thin": thin, "halo": halo, "fringe": fringe}
-LIMITED = ("replace", "clean", "thin", "halo", "fringe")        # these also take an area and then change nothing outside it
+# these also take an area and then change nothing outside it; with "protect": true, nothing inside it
+LIMITED = ("replace", "clean", "thin", "halo", "fringe")
 
 
 def apply(images, steps):
@@ -258,10 +259,14 @@ def apply(images, steps):
         if not isinstance(step, dict) or step.get("op") not in OPS:
             raise ValueError(f"Edit {number}: op is one of {', '.join(OPS)}")
         try:
-            where = {k: step[k] for k in ("rect", "points", "cells") if k in step} if step["op"] in LIMITED else {}
+            where = {k: step[k] for k in ("rect", "points", "cells", "protect") if k in step} if step["op"] in LIMITED else {}
             if where:
+                if len(where) == 1 and "protect" in where:
+                    raise ValueError("protect needs an area: rect, points or cells")
                 done = OPS[step["op"]]([image.copy() for image in images], {k: v for k, v in step.items() if k not in where})
                 mask = area(where, images[0].shape[1], images[0].shape[0])
+                if where.get("protect"):                          # the area is what must stay as it is
+                    mask = ~mask
                 for image, changed in zip(images, done):
                     image[mask] = changed[mask]
             else:

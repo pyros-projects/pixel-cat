@@ -511,6 +511,38 @@ class Edits(Case):
         self.assertTrue((line.sum(axis=0)[8:28] == 1).all())        # thinned on the left
         self.assertTrue((line.sum(axis=0)[32:52] == 3).all())       # untouched on the right
 
+    def test_a_cleanup_step_can_protect_an_area(self):
+        out = self.native(self.drawing(), {"op": "thin", "rect": [0, 0, 30, 40], "protect": True})
+        line = self.lines_of(out)
+        self.assertTrue((line.sum(axis=0)[8:28] == 3).all())        # untouched on the left
+        self.assertTrue((line.sum(axis=0)[32:52] == 1).all())       # thinned on the right
+        with self.assertRaisesRegex(ValueError, "protect needs an area"):
+            self.native(self.drawing(), {"op": "thin", "protect": True})
+
+    def test_the_picture_on_the_clipboard_is_an_input(self):
+        from unittest import mock
+
+        from PIL import ImageGrab
+
+        picture = Image.fromarray(np.full((40, 40, 3), (200, 40, 40), dtype=np.uint8))
+        with mock.patch.object(ImageGrab, "grabclipboard", return_value=picture):
+            self.run_job(input="clipboard", convert={"mode": "grid", "grid": 8, "colors": 4})
+        self.assertEqual((self.out().shape[:2], colours(self.out())), ((8, 8), {"#c82828"}))
+        with mock.patch.object(ImageGrab, "grabclipboard", return_value=None):
+            with self.assertRaisesRegex(ValueError, "no picture on the clipboard"):
+                self.run_job(input="clipboard")
+
+    def test_the_large_palettes_hold_what_their_names_say(self):
+        from pixel_cat.palettes import PALETTES
+
+        sizes = {name: len(set(colours)) for name, colours in PALETTES.items()}
+        self.assertEqual([sizes[n] for n in ("lantern32", "painter48", "meadow48", "harbor48", "spectrum64")], [32, 48, 48, 48, 64])
+        y, x = np.mgrid[0:60, 0:80]
+        picture = np.stack([x * 3, y * 4, 255 - x * 2, np.full_like(x, 255)], axis=2).astype(np.uint8)
+        self.run_job(input=self.save(picture), convert={"mode": "grid", "grid": 80, "palette": "painter48", "colors": 48})
+        self.assertTrue(colours(self.out()) <= set(PALETTES["painter48"]))
+        self.assertGreater(len(colours(self.out())), 12)
+
     def test_a_wrong_step_names_itself(self):
         with self.assertRaisesRegex(ValueError, "Edit 2 .outline.: color"):
             self.edit({"op": "cutout"}, {"op": "outline", "color": "red"})
