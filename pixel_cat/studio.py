@@ -107,6 +107,29 @@ class Studio:
                     after[str(frame)] = base64.b64encode(png_bytes(new)).decode()
         return {"note": note, "layer": layer, "marks": marks, "after": after}
 
+    def make_loop(self, spec, frame, by):
+        """Turn one frame, as it looks, into a seamless loop that takes the place of the frames."""
+        from . import loops
+        from .options import keys
+
+        keys(spec, {"seconds", "fps", "seed", "regions"}, "loop")
+        if not 1 <= spec.get("seconds", 4) <= 20 or spec.get("fps", 8) not in (4, 6, 8, 10, 12):
+            raise ValueError("A loop runs 1 to 20 seconds at 4, 6, 8, 10 or 12 frames per second")
+        if not isinstance(spec.get("regions"), list) or not spec["regions"]:
+            raise ValueError("A loop needs at least one region")
+        loops.validate(spec["regions"])
+        with self.lock:
+            before = self.project.snapshot()
+            still = self.project.composite(max(0, min(len(self.project.frames) - 1, int(frame))))
+            images, durations = loops.animate(still, spec)
+            self.project = Project.from_frames(images, durations, "Loop")
+            if before.palette and not self.project.palette:
+                self.project.palette = before.palette
+            note = f"made a loop of {len(images)} frames from frame {frame}"
+            self.undo.append((before, note, by))
+            self.redo.clear()
+            return self._changed(by, note)
+
     def step(self, back, by):
         with self.lock:
             source, target = (self.undo, self.redo) if back else (self.redo, self.undo)
@@ -265,6 +288,8 @@ def handler_for(studio):
                 by = "agent" if data.get("by") == "agent" else "you"
                 if url.path == "/api/op":
                     return self.send(200, studio.change(data["op"], by))
+                if url.path == "/api/loop":
+                    return self.send(200, studio.make_loop(data["loop"], data.get("frame", 0), by))
                 if url.path == "/api/preview":
                     return self.send(200, studio.preview(data["op"]))
                 if url.path == "/api/undo":

@@ -91,6 +91,16 @@ function draw() {
   $("hint").hidden = S.cels.some(row => row.some(Boolean)) || !!S.float;
   overlay();
 }
+function edge(ctx, mask, left, top, w, h) {  // stroke the outline of the marked cells of a mask
+  const z = S.zoom, has = (x, y) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x];
+  ctx.beginPath();
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!has(x, y)) continue; const l = S.panX + (left + x) * z + 0.5, t = S.panY + (top + y) * z + 0.5;
+    if (!has(x, y - 1)) { ctx.moveTo(l, t); ctx.lineTo(l + z, t); } if (!has(x, y + 1)) { ctx.moveTo(l, t + z); ctx.lineTo(l + z, t + z); }
+    if (!has(x - 1, y)) { ctx.moveTo(l, t); ctx.lineTo(l, t + z); } if (!has(x + 1, y)) { ctx.moveTo(l + z, t); ctx.lineTo(l + z, t + z); }
+  }
+  ctx.stroke();
+}
 function overlay() {
   const ratio = devicePixelRatio || 1, w = stage.clientWidth, h = stage.clientHeight;
   if (over.width !== w * ratio || over.height !== h * ratio) { over.width = w * ratio; over.height = h * ratio; }
@@ -109,14 +119,7 @@ function overlay() {
     for (const [colour, offset] of [["#000", 0], ["#fff", 4]]) {
       ctx.strokeStyle = colour; ctx.lineDashOffset = offset;
       if (!box.mask) { ctx.strokeRect(X(box.x) + 0.5, Y(box.y) + 0.5, box.w * z, box.h * z); continue; }
-      ctx.beginPath();
-      const has = (x, y) => x >= 0 && y >= 0 && x < box.w && y < box.h && box.mask[y * box.w + x];
-      for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) {
-        if (!has(x, y)) continue; const l = X(box.x + x) + 0.5, t = Y(box.y + y) + 0.5;
-        if (!has(x, y - 1)) { ctx.moveTo(l, t); ctx.lineTo(l + z, t); } if (!has(x, y + 1)) { ctx.moveTo(l, t + z); ctx.lineTo(l + z, t + z); }
-        if (!has(x - 1, y)) { ctx.moveTo(l, t); ctx.lineTo(l, t + z); } if (!has(x + 1, y)) { ctx.moveTo(l + z, t); ctx.lineTo(l + z, t + z); }
-      }
-      ctx.stroke();
+      edge(ctx, box.mask, box.x, box.y, box.w, box.h);
     }
     ctx.setLineDash([]);
   }
@@ -125,6 +128,17 @@ function overlay() {
     ctx.strokeStyle = "#5ec4c8"; ctx.lineWidth = 1.5; ctx.beginPath(); outline.forEach(([x, y], i) => i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)));
     if (S.poly && S.hoverAt) ctx.lineTo(X(S.hoverAt[0]), Y(S.hoverAt[1])); ctx.stroke();
     if (S.poly) { ctx.fillStyle = "#5ec4c8"; for (const [x, y] of S.poly) ctx.fillRect(X(x) - 2, Y(y) - 2, 4, 4); }
+  }
+  if (!$("loopPanel").hidden) {             // what is painted to move, each kind in its colour, the one in hand stronger
+    const w = S.doc.width;
+    for (const region of S.regions) {       // a tint, and an outline that shows on any picture
+      ctx.fillStyle = MOVES[region.kind][0]; ctx.globalAlpha = region === S.paint ? 0.45 : 0.22;
+      region.mask.forEach((on, i) => { if (on) ctx.fillRect(X(i % w), Y(Math.floor(i / w)), z, z); });
+      ctx.globalAlpha = 1; ctx.lineWidth = region === S.paint ? 3 : 2;
+      ctx.strokeStyle = "#0b0c10"; edge(ctx, region.mask, 0, 0, w, S.doc.height);
+      ctx.lineWidth = region === S.paint ? 1.5 : 1; ctx.strokeStyle = MOVES[region.kind][0]; edge(ctx, region.mask, 0, 0, w, S.doc.height);
+    }
+    ctx.lineWidth = 1;
   }
   if (S.findings) {                         // what the check found in this frame, each kind in its colour
     for (const [kind, [colour]] of Object.entries(KINDS)) {
@@ -145,11 +159,22 @@ function overlay() {
     ctx.strokeRect(X(S.hover[0] - (n > 1 ? half : 0)) + 0.5, Y(S.hover[1] - (n > 1 ? half : 0)) + 0.5, n * z, n * z);
   }
 }
+function taken() {                          // the width an open panel takes from the left of the stage
+  const open = [...stage.querySelectorAll(".findings")].find(panel => !panel.hidden);
+  return open && stage.clientWidth > 2.5 * open.offsetWidth ? open.offsetWidth + 24 : 0;
+}
 function fit() {
-  const room = Math.min((stage.clientWidth - 60) / S.doc.width, (stage.clientHeight - 60) / S.doc.height);
+  const room = Math.min((stage.clientWidth - taken() - 60) / S.doc.width, (stage.clientHeight - 60) / S.doc.height);
   S.zoom = Math.max(1, Math.min(40, Math.floor(room))); centre();
 }
-function centre() { S.panX = Math.round((stage.clientWidth - S.doc.width * S.zoom) / 2); S.panY = Math.round((stage.clientHeight - S.doc.height * S.zoom) / 2); }
+function centre() { const left = taken(); S.panX = left + Math.round((stage.clientWidth - left - S.doc.width * S.zoom) / 2); S.panY = Math.round((stage.clientHeight - S.doc.height * S.zoom) / 2); }
+function panel(id, open) {                  // one panel at a time; the picture moves out from under it unless the person placed it
+  for (const other of stage.querySelectorAll(".findings")) other.hidden = other.id !== id || !open;
+  if ($("findings").hidden) S.findings = null;
+  if ($("loopPanel").hidden) S.paint = null;
+  if (S.doc && !S.moved) { fit(); chrome(); }
+  draw();
+}
 
 // ---------------------------------------------------------------- tools
 function dots(x, y) {                       // the cells one touch of the brush covers
@@ -258,6 +283,11 @@ stage.addEventListener("pointerdown", event => {
   const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey ? "picker" : S.tool;
   drag = { tool, x, y, lastX: x, lastY: y, startX: event.clientX, startY: event.clientY, panX: S.panX, panY: S.panY, shift: event.shiftKey };
   if (tool === "hand") { S.panned = S.moved = true; return; }
+  if (S.paint && ["pencil", "eraser", "fill"].includes(tool)) {
+    drag.region = true;
+    if (tool === "fill") { wand(x, y); drag = null; } else paintRegion(dots(x, y), tool === "pencil");
+    loopRows(); overlay(); return;
+  }
   if (tool === "picker") { pick(x, y); return; }
   if (tool === "select") { drop(); S.sel = null; draw(); return; }
   if (tool === "lasso") { drop(); S.sel = null; drag.path = [pointAt(event)]; draw(); return; }
@@ -281,6 +311,7 @@ stage.addEventListener("pointermove", event => {
   S.hoverAt = pointAt(event);
   if (!drag) { overlay(); return; }
   if (drag.path) { drag.path.push(pointAt(event)); overlay(); return; }
+  if (drag.region) { paintRegion(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.tool === "pencil"); drag.lastX = x; drag.lastY = y; overlay(); return; }
   if (drag.tool === "hand") { S.panX = drag.panX + event.clientX - drag.startX; S.panY = drag.panY + event.clientY - drag.startY; draw(); return; }
   if (drag.tool === "picker") { pick(x, y); return; }
   if (drag.tool === "pencil" || drag.tool === "eraser") {
@@ -294,7 +325,8 @@ stage.addEventListener("pointermove", event => {
 });
 stage.addEventListener("pointerup", event => {
   if (!drag) return;
-  const tool = drag.tool, path = drag.path; drag = null;
+  const tool = drag.tool, path = drag.path, region = drag.region; drag = null;
+  if (region) { loopRows(); return; }
   if (path) { S.sel = shapeFrom(path); draw(); context(); reportView(); return; }
   if (S.preview) { put(S.preview, false); S.preview = null; }
   if (S.drawing) { S.drawing = false; draw(); commit(); }
@@ -477,7 +509,7 @@ async function runCheck() {
   const box = $("findings"), total = Object.values(S.findings.total).reduce((a, b) => a + b, 0);
   box.replaceChildren();
   const head = document.createElement("h3"); head.textContent = total ? "Worth a look" : "Nothing suspicious"; const close = document.createElement("button"); close.textContent = "×"; close.className = "quiet"; close.title = "Close";
-  close.onclick = () => { S.findings = null; box.hidden = true; overlay(); }; head.append(close); box.append(head);
+  close.onclick = () => panel("findings", false); head.append(close); box.append(head);
   const kinds = document.createElement("div"); kinds.className = "kinds";
   for (const [kind, [colour, label]] of Object.entries(KINDS)) { const chip = document.createElement("span"), dot = document.createElement("i"); dot.style.background = colour; chip.append(dot, `${S.findings.total[kind]} ${label}`); kinds.append(chip); }
   box.append(kinds);
@@ -488,7 +520,7 @@ async function runCheck() {
     pick.textContent = "select"; pick.onclick = () => { const [x, y, w, h] = area.rect; setTool("select"); S.sel = { x, y, w, h }; go(area.frames.includes(S.frame) ? S.frame : area.frames[0], S.layer); context(); reportView(); };
     row.append(text, pick); box.append(row);
   }
-  box.hidden = false; overlay();
+  panel("findings", true);
 }
 
 // ---------------------------------------------------------------- clean up, with a look at the result first
@@ -500,8 +532,8 @@ function tidyForm() {
   if (step !== "halo") how.selectedIndex = 1;
   $("tidyWhere").textContent = S.sel ? "Only inside the selection." : "On the whole layer. Select an area first to keep it to that.";
 }
-$("tidy").onclick = () => { $("cleanup").hidden = !$("cleanup").hidden; $("findings").hidden = true; tidyForm(); };
-$("cleanupClose").onclick = () => $("cleanup").hidden = true; $("tidyStep").onchange = tidyForm;
+$("tidy").onclick = () => { panel("cleanup", $("cleanup").hidden); tidyForm(); };
+$("cleanupClose").onclick = () => panel("cleanup", false); $("tidyStep").onchange = tidyForm;
 $("tidyGo").onclick = () => {
   const kind = $("tidyStep").value, step = { op: kind };
   if (kind === "thin") { step.width = +$("tidyWidth").value; step.gap = +$("tidyGap").value; if ($("tidyInk").value === "colour") step.color = S.colour; }
@@ -509,6 +541,52 @@ $("tidyGo").onclick = () => {
   if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] });
   const all = $("tidyFrames").value === "all";
   proposeOp(`${$("tidyStep").selectedOptions[0].textContent}, on ${all ? "all frames" : "frame " + (S.frame + 1)}.`, { op: "edits", layer: S.layer, frames: all ? "all" : [S.frame], steps: [step] });
+};
+
+// ---------------------------------------------------------------- loops: paint what moves
+const MOVES = { clouds: ["#ffffff", "clouds drift"], water: ["#5ec4c8", "water ripples"], sway: ["#6fd08c", "leaves and grass sway"], twinkle: ["#ffe680", "lights twinkle"],
+  rise: ["#b8bcc8", "smoke rises"], fireflies: ["#f2a65a", "fireflies"], leaves: ["#e0703a", "falling leaves"], birds: ["#c084fc", "birds"] };
+S.regions = [];
+function regionCells(region) { const out = [], w = S.doc.width; region.mask.forEach((on, i) => { if (on) out.push([i % w, Math.floor(i / w)]); }); return out; }
+function loopRows() {
+  const box = $("loopRegions"); box.replaceChildren();
+  S.regions.forEach((region, n) => {
+    const row = document.createElement("div"), dot = document.createElement("i"), kind = document.createElement("select"), amount = document.createElement("select"), paint = document.createElement("button"), gone = document.createElement("button"), note = document.createElement("small");
+    row.className = "region"; dot.style.background = MOVES[region.kind][0];
+    for (const [value, [, label]] of Object.entries(MOVES)) { const o = document.createElement("option"); o.value = value; o.textContent = label; kind.append(o); }
+    kind.value = region.kind; kind.onchange = () => { region.kind = kind.value; loopRows(); overlay(); };
+    for (const [value, label] of [[0.5, "a little"], [1, "normal"], [2, "more"], [4, "a lot"]]) { const o = document.createElement("option"); o.value = value; o.textContent = label; amount.append(o); }
+    amount.value = region.amount; amount.onchange = () => region.amount = +amount.value;
+    paint.textContent = "paint"; paint.className = S.paint === region ? "on" : ""; paint.title = "Paint this area on the picture";
+    paint.onclick = () => { S.paint = S.paint === region ? null : region; if (S.paint && !["pencil", "eraser", "fill"].includes(S.tool)) setTool("pencil"); loopRows(); overlay(); };
+    gone.textContent = "×"; gone.title = "Remove"; gone.onclick = () => { S.regions.splice(n, 1); if (S.paint === region) S.paint = null; loopRows(); overlay(); };
+    const cells = region.mask.reduce((a, b) => a + b, 0); note.textContent = cells ? `${cells} cells painted` : "area guessed (paint to set it)";
+    row.append(dot, kind, amount, paint, gone, note); box.append(row);
+  });
+}
+function paintRegion(cells, on) { const w = S.doc.width, h = S.doc.height; for (const [x, y] of cells) if (x >= 0 && y >= 0 && x < w && y < h) S.paint.mask[y * w + x] = on ? 1 : 0; }
+function wand(x, y) {                        // the touching cells whose colour is close to the one clicked
+  const w = S.doc.width, h = S.doc.height; if (x < 0 || y < 0 || x >= w || y >= h) return;
+  const flat = blank(); paintFrame(flat.getContext("2d"), S.frame, 1);
+  const d = flat.getContext("2d").getImageData(0, 0, w, h).data, slack = +$("loopWand").value, start = (y * w + x) * 4, seen = new Uint8Array(w * h), stack = [[x, y]];
+  while (stack.length) {
+    const [px, py] = stack.pop(); if (px < 0 || py < 0 || px >= w || py >= h || seen[py * w + px]) continue;
+    const i = (py * w + px) * 4; seen[py * w + px] = 1;
+    if (Math.max(Math.abs(d[i] - d[start]), Math.abs(d[i + 1] - d[start + 1]), Math.abs(d[i + 2] - d[start + 2])) > slack || (d[i + 3] < 128) !== (d[start + 3] < 128)) continue;
+    S.paint.mask[py * w + px] = 1; stack.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+  }
+}
+$("loop").onclick = () => { panel("loopPanel", $("loopPanel").hidden); loopRows(); };
+$("loopClose").onclick = () => panel("loopPanel", false);
+$("loopAdd").onclick = () => { const used = S.regions.map(r => r.kind), kind = Object.keys(MOVES).find(k => !used.includes(k)) || "clouds"; const region = { kind, amount: 1, mask: new Uint8Array(S.doc.width * S.doc.height) }; S.regions.push(region); S.paint = region; if (!["pencil", "eraser", "fill"].includes(S.tool)) setTool("pencil"); loopRows(); overlay(); };
+$("loopGo").onclick = async () => {
+  if (!S.regions.length) return toast("Add something that moves first");
+  drop(); S.paint = null; toast("Making the loop …"); S.pending++;
+  const regions = S.regions.map(r => ({ kind: r.kind, amount: r.amount, ...(r.mask.some(Boolean) ? { area: { cells: regionCells(r) } } : {}) }));
+  try {
+    const done = await send("/api/loop", { frame: S.frame, loop: { seconds: +$("loopSeconds").value, fps: +$("loopFps").value, regions } });
+    S.known = Math.max(S.known, done.rev); S.regions = []; panel("loopPanel", false); S.frame = 0; S.layer = 0; await load(true); play();
+  } catch (error) { fail(error); } finally { S.pending--; }
 };
 
 // ---------------------------------------------------------------- chat

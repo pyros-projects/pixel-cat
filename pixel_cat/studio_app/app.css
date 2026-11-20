@@ -134,3 +134,11 @@ button.quiet.active { color: var(--ember); border-color: var(--ember-deep); }
 #cleanup label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; color: var(--quiet); }
 #cleanup select { max-width: 170px; }
 #cleanup #tidyGo { width: 100%; margin-top: 6px; }
+#loopPanel { width: 330px; }
+#loopPanel label { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 6px 0; color: var(--quiet); }
+#loopPanel #loopGo, #loopPanel #loopAdd { width: 100%; margin: 4px 0; }
+.region { display: grid; grid-template-columns: 12px minmax(0, 1fr) 62px auto auto; gap: 5px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+.region i { width: 10px; height: 10px; border-radius: 2px; }
+.region small { grid-column: 2 / -1; color: var(--quiet); }
+.region button { padding: 1px 7px; }
+.region button.on { background: var(--ember); border-color: var(--ember); color: #1a1208; }

@@ -161,7 +161,7 @@ uv run pixel-cat convert icon.png -o sprite.png --mode grid --grid 64 --sampling
 
 </div>
 
-A still picture can become a seamless loop. Name the regions and what moves in them: `clouds` drift, `water` ripples, `twinkle` makes small lights blink, `sway` moves leaves and grass, `rise` lifts smoke. Every effect only moves cells that are already there, so the palette stays, and the last frame leads back into the first.
+A still picture can become a seamless loop. Name the regions and what moves in them: `clouds` drift, `water` ripples, `twinkle` makes small lights blink, `sway` moves leaves and grass, `rise` lifts smoke. These only move cells that are already there, so the palette stays. `fireflies`, `leaves` and `birds` add small things of their own. The last frame leads back into the first. In the studio, "Loop" lets you paint each area on the picture.
 
 ```sh
 uv run pixel-cat convert examples/images/lake.png -o output/lake.gif --loop clouds,water

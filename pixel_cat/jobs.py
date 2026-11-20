@@ -46,16 +46,7 @@ def convert(job, base):
             raise ValueError("A loop runs 1 to 20 seconds at 4, 6, 8, 10 or 12 frames per second")
         if not isinstance(loop.get("regions"), list) or not loop["regions"]:
             raise ValueError("A loop needs regions, each with a kind: " + ", ".join(loops.KINDS))
-        for region in loop["regions"]:
-            keys(region, {"kind", "area", "amount"}, "region")
-            if region.get("kind") not in loops.KINDS:
-                raise ValueError("A region's kind is one of " + ", ".join(loops.KINDS))
-            area = region.get("area", "auto")
-            flat = [v for point in area for v in (point if isinstance(point, list) else [point])] if isinstance(area, list) else None
-            if area != "auto" and (flat is None or len(flat) < 4 or not all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in flat)):
-                raise ValueError('A region\'s area is "auto", a box [left, top, right, bottom] or a polygon of [x, y] points, in fractions of the picture')
-            if not 0 < region.get("amount", 1) <= 8:
-                raise ValueError("A region's amount is a number up to 8")
+        loops.validate(loop["regions"])
 
     summary = {"input": str(path)}
     if is_project:

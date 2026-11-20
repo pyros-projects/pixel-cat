@@ -189,6 +189,26 @@ class Studios(unittest.TestCase):
         self.call("/api/redo", {})
         self.assertTrue(Project.load(self.folder / "s.pixelcat").composite(0)[..., 3].any())
 
+    def test_a_frame_becomes_a_loop_over_a_painted_area_and_undo_brings_it_back(self):
+        self.call("/api/op", {"op": {"op": "resize", "width": 24, "height": 24}})
+        self.call("/api/op", {"op": {"op": "draw", "color": "#2060c0", "rect": [0, 0, 24, 24]}})
+        self.call("/api/op", {"op": {"op": "draw", "color": "#80c0ff", "points": [[x, y] for y in range(12, 24) for x in range(0, 24, 4)]}})
+        water = [[x, y] for y in range(12, 24) for x in range(24)]
+        sky = [[x, y] for y in range(6) for x in range(24)]
+        done = self.call("/api/loop", {"frame": 0, "loop": {"seconds": 2, "fps": 8, "regions": [
+            {"kind": "water", "amount": 2, "area": {"cells": water}}, {"kind": "fireflies", "amount": 4, "area": {"cells": sky}}]}})
+        self.assertIn("made a loop of 16 frames", done["note"])
+        project = Project.load(self.folder / "s.pixelcat")
+        frames = np.stack([project.composite(i) for i in range(16)])
+        self.assertEqual(frames.shape, (16, 24, 24, 4))
+        self.assertFalse((frames[:, 12:] == frames[0, 12:]).all())             # the water moves
+        self.assertTrue((frames[:, 6:12] == frames[0, 6:12]).all())            # what was not painted stands still
+        self.assertTrue((frames[:, :6, :, :3] == (255, 230, 128)).all(axis=3).any())   # a firefly is out
+        self.call("/api/undo", {})
+        self.assertEqual(len(Project.load(self.folder / "s.pixelcat").frames), 1)
+        with self.assertRaisesRegex(Exception, "at least one region"):
+            self.call("/api/loop", {"frame": 0, "loop": {"regions": []}})
+
     def test_a_preview_shows_what_would_change_and_changes_nothing(self):
         self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [0, 0, 8, 8]}})
         self.call("/api/op", {"op": {"op": "add-frame", "copy": 0}})

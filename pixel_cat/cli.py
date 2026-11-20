@@ -129,7 +129,7 @@ def catalog():
         "outputs": ["png", "gif", "mp4", "webm", "pixelcat (a project with layers and frames)"],
         "recipe": {"input": "path", "convert": "mode and its settings", "media": "frames, speed, stability",
                    "sheet": "columns, rows, delay", "edits": "steps, each with an op",
-                   "loop": "seconds, fps, seed, regions (kind, area, amount)",
+                   "loop": "seconds, fps, seed, regions (kind, area, amount; color, colors and wind for fireflies, leaves, birds)",
                    "export": "a path, or objects with path, scale, frame, format"},
         "edits": list(OPS),
         "project operations": OPERATIONS,

@@ -16,6 +16,9 @@
     <span id="last" class="last"></span>
   </div>
   <div class="bar right">
+    <button id="check" title="Look for flicker, stray fragments, holes and colours outside the palette">Check</button>
+    <button id="tidy" title="Repair lines, remove halos, loose bits and specks, with a look at the result first">Clean up</button>
+    <button id="loop" title="Bring this frame to life as a seamless loop: clouds, water, leaves, fireflies, birds">Loop</button>
     <span id="zoom" class="quiet"></span>
     <button id="import">Import</button>
     <div class="menu"><button id="export">Export</button>
@@ -49,6 +52,16 @@
     <button id="tidyGo" class="primary">Show what it would do</button>
   </div>
   <div id="findings" class="findings" hidden></div>
+  <div id="loopPanel" class="findings" hidden>
+    <h3>Loop from this frame <button id="loopClose" class="quiet" title="Close">&times;</button></h3>
+    <p>Add what should move. Paint its area with the pencil, take cells away with the eraser, or click with the fill tool to take a whole area of similar colour. Without paint, the area is guessed.</p>
+    <div id="loopRegions"></div>
+    <button id="loopAdd">+ something that moves</button>
+    <label>Similar colour means <select id="loopWand"><option value="0">exactly the same</option><option value="16">close</option><option value="28" selected>fairly close</option><option value="48">roughly</option><option value="80">very roughly</option></select></label>
+    <label>Length <select id="loopSeconds"><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select> s at <select id="loopFps"><option>6</option><option selected>8</option><option>10</option><option>12</option></select> frames</label>
+    <button id="loopGo" class="primary">Make the loop</button>
+    <p>The loop takes the place of the frames. Undo brings them back.</p>
+  </div>
   <div id="hint" class="hint" hidden>Draw, drop a picture here, or ask the agent in the chat.</div>
   <div id="where" class="where"></div>
 </main>
@@ -91,8 +104,6 @@
     <button id="leftFrame" title="Move frame left">&larr;</button><button id="rightFrame" title="Move frame right">&rarr;</button><button id="delFrame" title="Delete frame">&times;</button>
     <span class="gap"></span>
     <button id="hold" title="Make the selected area stand still: its cells are copied from this frame into the others">hold selection</button>
-    <button id="check" title="Look for flicker, stray fragments, holes and colours outside the palette">check</button>
-    <button id="tidy" title="Repair lines, remove halos, loose bits and specks, with a look at the result first">clean up</button>
   </div>
   <div id="timeline" class="timeline"></div>
 </footer>

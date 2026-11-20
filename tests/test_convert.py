@@ -350,6 +350,50 @@ class Loops(Case):
             self.assertTrue((frames[:, 36:] == frames[0, 36:]).all())
             self.assertFalse((frames[:, :36, :80] == frames[0, :36, :80]).all())
 
+    def test_fireflies_leaves_and_birds_stay_in_their_region_and_come_round(self):
+        job = dict(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"])
+        regions = [{"kind": "fireflies", "area": [0, 0.35, 1, 0.5], "amount": 4, "color": "#ffe680"},
+                   {"kind": "leaves", "area": [0, 0, 0.5, 0.33], "amount": 4, "colors": ["#c9682c"], "wind": "left"},
+                   {"kind": "birds", "area": [0.5, 0, 1, 0.3], "amount": 1, "color": "#101018"}]
+        self.run_job(**job, loop={"seconds": 3, "fps": 8, "regions": regions})
+        frames = np.stack(self.frames_of("out.gif"))
+        new = {"flies": (255, 230, 128), "leaves": (201, 104, 44), "birds": (16, 16, 24)}
+        where = {name: (frames == np.array(colour)).all(axis=3) for name, colour in new.items()}
+        self.assertTrue(where["flies"].any() and where["leaves"].any() and where["birds"].any())
+        self.assertFalse(where["flies"][:, :42].any() or where["flies"][:, 60:].any())      # only on the hill
+        self.assertFalse(where["leaves"][:, :, 80:].any() or where["leaves"][:, 40:].any()) # only in the upper left
+        self.assertFalse(where["birds"][:, :, :80].any() or where["birds"][:, 36:].any())   # only in the upper right
+        spots = [np.argwhere(where["birds"][i]) for i in range(len(frames))]
+        self.assertTrue(any(len(a) and len(b) and a[:, 1].mean() != b[:, 1].mean() for a, b in zip(spots, spots[1:])))   # they fly
+        water = frames[:, 60:]
+        self.assertTrue((water == water[0]).all())                                         # and nothing else moved
+        with self.assertRaisesRegex(ValueError, "wind is"):
+            self.run_job(**job, loop={"regions": [{"kind": "leaves", "wind": "up"}]})
+
+    def test_a_painted_area_is_a_list_of_cells(self):
+        cells = [[x, y] for y in range(5, 30) for x in range(20, 90)]
+        self.run_job(input=self.scene(), convert={"mode": "grid", "grid": 160, "colors": 8}, export=["out.gif"],
+                     loop={"seconds": 2, "regions": [{"kind": "clouds", "amount": 3, "area": {"cells": cells}}]})
+        frames = np.stack(self.frames_of("out.gif"))
+        self.assertFalse((frames[:, 5:30, 20:90] == frames[0, 5:30, 20:90]).all())
+        outside = np.ones((120, 160), dtype=bool)
+        outside[5:30, 20:90] = False
+        self.assertTrue((frames[:, outside] == frames[0, outside]).all())
+
+    def test_water_in_a_painted_area_never_jumps_a_gap(self):
+        from pixel_cat import loops
+
+        image = np.zeros((6, 40, 4), dtype=np.uint8)
+        image[..., 3] = 255
+        image[:, :18, 0] = 200                                      # red on the left of a gap
+        image[:, 22:, 2] = 200                                      # blue on the right of it
+        mask = np.ones((6, 40), dtype=bool)
+        mask[:, 18:22] = False
+        for shift in (-3, 2, 7):
+            out = loops._shift_rows(image, mask, np.full(6, shift))
+            self.assertTrue((out[:, :18, 2] == 0).all() and (out[:, 22:, 0] == 0).all())
+            self.assertTrue((out[:, 18:22] == image[:, 18:22]).all())
+
     def test_a_loop_needs_a_still_and_known_kinds(self):
         with self.assertRaises(ValueError):
             self.run_job(input=self.scene(), loop={"regions": [{"kind": "fog"}]}, export=["out.gif"])
