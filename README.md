@@ -12,7 +12,7 @@
 
 [![License: MIT][license-shield]][license-url]
 [![Python 3.11+][python-shield]][python-url]
-[![Version 0.5.0][version-shield]][version-url]
+[![Version 0.6.0][version-shield]][version-url]
 [![Exports PNG, GIF, MP4, WebM][exports-shield]][exports-url]
 [![npx skills add pyros-projects/pixel-cat][skill-shield]][skill-url]
 [![Runs offline][offline-shield]][offline-url]
@@ -101,7 +101,7 @@ The studio is a page on your own machine for drawing and animating. The timeline
 
 <img src="media/joints.gif" alt="A desk lamp bows and rises: two arms and a shade, each turning at its joint, and the light follows the shade" width="240" align="right">
 
-Layers can have joints. A part turns around its pivot and hangs on another part, so a hand follows its forearm. You draw each part once, pose two or three frames, and the frames between follow. This lamp is four drawings and two poses; the light hangs on the shade:
+Layers can have joints. A part turns around its pivot and hangs on another part, so a hand follows its forearm. You draw each part once, pose two or three frames, and the frames between follow. A flat drawing works too: select a piece, press "part", and it sits on a layer of its own with a joint. This lamp is four drawings and two poses; the light hangs on the shade:
 
 ```sh
 uv run pixel-cat studio examples/projects/lamp.pixelcat --open
@@ -210,7 +210,7 @@ The tests build their own inputs and check what a conversion promises: the grid 
 [license-url]: LICENSE
 [python-shield]: https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white
 [python-url]: pyproject.toml
-[version-shield]: https://img.shields.io/badge/version-0.5.0-6b5fb5?style=flat-square
+[version-shield]: https://img.shields.io/badge/version-0.6.0-6b5fb5?style=flat-square
 [version-url]: pyproject.toml
 [exports-shield]: https://img.shields.io/badge/exports-PNG%20%C2%B7%20GIF%20%C2%B7%20MP4%20%C2%B7%20WebM-c9682c?style=flat-square
 [exports-url]: docs/recipes.md
