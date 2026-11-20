@@ -117,7 +117,7 @@ def _drift(image, mask, frames, per_frame, mover):
 def validate(regions):
     """Reject a region that cannot be carried out, with a plain reason."""
     for region in regions:
-        keys(region, {"kind", "area", "amount", "color", "colors", "wind"}, "region")
+        keys(region, {"kind", "area", "amount", "color", "colors", "wind", "size"}, "region")
         if region.get("kind") not in KINDS:
             raise ValueError("A region's kind is one of " + ", ".join(KINDS))
         area = region.get("area", "auto")
@@ -134,6 +134,8 @@ def validate(regions):
             rgb(colour)
         if region.get("wind", "right") not in ("left", "right", "none"):
             raise ValueError("wind is left, right or none")
+        if region.get("size", 1) not in (1, 2, 3):
+            raise ValueError("size is 1, 2 or 3")
 
 
 def particles(kind, image, mask, count, region, rng):
@@ -151,6 +153,7 @@ def particles(kind, image, mask, count, region, rng):
     out = [[] for _ in range(count)]
     if kind == "fireflies":
         flies = max(1, min(60, round(len(xs) / 600 * amount)))
+        glow = {1: [(0, 0)], 2: [(0, 0), (1, 0), (0, 1), (1, 1)], 3: [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]}[region.get("size", 1)]
         for n in range(flies):
             home = rng.integers(len(xs))
             reach, rounds, phase = rng.uniform(1, 4, 2), rng.integers(1, 3, 2), rng.random(2)
@@ -158,8 +161,9 @@ def particles(kind, image, mask, count, region, rng):
             for i in range(count):
                 t = i / count
                 if (blinks * t + lit) % 1 < 0.6:
-                    out[i].append((round(xs[home] + reach[0] * math.sin(math.tau * (rounds[0] * t + phase[0]))),
-                                   round(ys[home] + reach[1] * math.sin(math.tau * (rounds[1] * t + phase[1]))), colours[n % len(colours)]))
+                    x = round(xs[home] + reach[0] * math.sin(math.tau * (rounds[0] * t + phase[0])))
+                    y = round(ys[home] + reach[1] * math.sin(math.tau * (rounds[1] * t + phase[1])))
+                    out[i].extend((x + dx, y + dy, colours[n % len(colours)]) for dx, dy in glow)
     elif kind == "leaves":
         wind = {"left": -1, "right": 1}.get(region.get("wind", "right"), 0)
         for n in range(max(1, min(40, round(len(xs) / 900 * amount)))):

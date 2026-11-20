@@ -9,6 +9,7 @@ const TOOLS = [
   ["lasso", "◌", "Q", "Lasso: draw around an area"], ["polygon", "⬠", "W", "Polygon: click the corners, Enter closes"],
   ["melt", "≋", "N", "Melt brush: small flecks join the shape around them"], ["edge", "◎", "O", "Edge: click an area to give it a rim in the current colour"],
   ["swap", "⇄", "C", "Swap brush: the colour you start on becomes the current colour"],
+  ["mask", "▨", "A", "Paint a selection with the brush; Alt takes cells away"],
   ["move", "✥", "V", "Move the selection or the whole cel"], ["pose", "↻", "J", "Pose: turn and move a layer around its joint"],
   ["hand", "✋", "H", "Pan (or hold Space)"]];
 const S = { doc: null, meta: {}, cels: [], frame: 0, layer: 0, tool: "pencil", colour: "#f2a65a", size: 1, mirror: false,
@@ -59,7 +60,7 @@ async function commit() {                  // the current cel changed under the 
   thumbs(layer, frame); S.pending++;
   try {
     const everywhere = $("spread").checked && S.doc.frames.length > 1;
-    const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: "all" } } : {}) } });
+    const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: pickedFrames() || "all" } } : {}) } });
     S.known = Math.max(S.known, done.rev); S.meta.undo = (S.meta.undo || 0) + 1; S.meta.redo = 0; S.meta.last = [done.note, "you"]; chrome();
     if (everywhere || S.doc.locked || S.doc.layers[layer].joint) await load();   // other frames changed, the palette moved the colours, or a pose has to be drawn again
   } catch (error) { fail(error); await load(); } finally { S.pending--; }
@@ -71,7 +72,7 @@ function cel(create) {
   if (!S.cels[S.layer][S.frame] && create) S.cels[S.layer][S.frame] = blank();
   return S.cels[S.layer][S.frame];
 }
-const DRAWS = ["pencil", "eraser", "fill", "line", "rect", "select", "lasso", "polygon", "move", "melt", "edge", "swap"];
+const DRAWS = ["pencil", "eraser", "fill", "line", "rect", "select", "lasso", "polygon", "move", "melt", "edge", "swap", "mask"];
 function atRest(i) { return i === S.layer && !!S.doc.layers[i].joint && DRAWS.includes(S.tool); }   // drawing a jointed layer: it shows at rest
 function paintFrame(ctx, frame, alpha) {
   const live = S.posing && frame === S.frame && alpha === 1 ? carried(S.posing.layer) : null;   // being turned right now, with all that hangs on it
@@ -301,6 +302,19 @@ function boxCells(x0, y0, x1, y1, filled) {
   for (let y = t; y <= b; y++) for (let x = l; x <= r; x++) if (filled || x === l || x === r || y === t || y === b) out.push([x, y]);
   return out;
 }
+function wholeMask() {                       // the selection as one mark per cell of the canvas
+  const w = S.doc.width, h = S.doc.height, out = new Uint8Array(w * h);
+  if (S.sel) for (let y = S.sel.y; y < S.sel.y + S.sel.h; y++) for (let x = S.sel.x; x < S.sel.x + S.sel.w; x++) if (!S.sel.mask || S.sel.mask[(y - S.sel.y) * S.sel.w + x - S.sel.x]) out[y * w + x] = 1;
+  return out;
+}
+function selectionFrom(marks) {              // and back: the smallest box that holds the marks, with its mask
+  const w = S.doc.width, h = S.doc.height; let l = w, t = h, r = -1, b = -1;
+  for (let i = 0; i < marks.length; i++) if (marks[i]) { const x = i % w, y = Math.floor(i / w); l = Math.min(l, x); r = Math.max(r, x); t = Math.min(t, y); b = Math.max(b, y); }
+  if (r < 0) return null;
+  const mask = new Uint8Array((r - l + 1) * (b - t + 1));
+  for (let y = t; y <= b; y++) for (let x = l; x <= r; x++) mask[(y - t) * (r - l + 1) + x - l] = marks[y * w + x];
+  return { x: l, y: t, w: r - l + 1, h: b - t + 1, mask };
+}
 function swapCells(cells, from) {             // cells of the colour the stroke began on take the current colour
   const c = cel(true), ctx = c.getContext("2d"), w = c.width, h = c.height; ctx.fillStyle = S.colour;
   for (const [x, y] of cells) {
@@ -382,7 +396,7 @@ let drag = null;
 stage.addEventListener("pointerdown", event => {
   if (!S.doc || event.button === 2) return;
   stage.setPointerCapture(event.pointerId); stopPlaying();
-  const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey && S.tool !== "pose" ? "picker" : S.tool;
+  const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey && S.tool !== "pose" && S.tool !== "mask" ? "picker" : S.tool;
   drag = { tool, x, y, lastX: x, lastY: y, startX: event.clientX, startY: event.clientY, panX: S.panX, panY: S.panY, shift: event.shiftKey };
   if (tool === "hand") { S.panned = S.moved = true; return; }
   if (S.paint && ["pencil", "eraser", "fill"].includes(tool)) {
@@ -404,6 +418,11 @@ stage.addEventListener("pointerdown", event => {
   }
   if (tool === "select") { drop(); S.sel = null; draw(); return; }
   if (tool === "lasso") { drop(); S.sel = null; drag.path = [pointAt(event)]; draw(); return; }
+  if (tool === "mask") {                     // each stroke adds to the selection; with Alt it takes away
+    drop(); drag.marks = wholeMask(); drag.take = event.altKey;
+    for (const [px, py] of dots(x, y)) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height) drag.marks[py * S.doc.width + px] = drag.take ? 0 : 1;
+    S.sel = selectionFrom(drag.marks); draw(); return;
+  }
   if (tool === "polygon") {
     drop(); drag = null; const at = pointAt(event);
     if (S.poly && S.poly.length >= 3 && Math.hypot((at[0] - S.poly[0][0]) * S.zoom, (at[1] - S.poly[0][1]) * S.zoom) < 8) return closePolygon();
@@ -441,6 +460,10 @@ stage.addEventListener("pointermove", event => {
   if (drag.region) { paintRegion(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.tool === "pencil"); drag.lastX = x; drag.lastY = y; overlay(); return; }
   if (drag.tool === "hand") { S.panX = drag.panX + event.clientX - drag.startX; S.panY = drag.panY + event.clientY - drag.startY; draw(); return; }
   if (drag.tool === "picker") { pick(x, y); return; }
+  if (drag.marks) {
+    for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height) drag.marks[py * S.doc.width + px] = drag.take ? 0 : 1;
+    drag.lastX = x; drag.lastY = y; S.sel = selectionFrom(drag.marks); overlay(); return;
+  }
   if (drag.melt) {
     for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py)) drag.melt.add(py * S.doc.width + px);
     drag.lastX = x; drag.lastY = y; overlay(); return;
@@ -472,7 +495,7 @@ stage.addEventListener("pointerup", event => {
   if (path) { S.sel = shapeFrom(path); draw(); context(); reportView(); return; }
   if (S.preview) { put(S.preview, false); S.preview = null; }
   if (S.drawing) { S.drawing = false; draw(); commit(); }
-  if (tool === "select") { context(); reportView(); }
+  if (tool === "select" || tool === "mask") { context(); reportView(); }
   if (tool === "move" && S.float && S.float.whole) drop();
 });
 stage.addEventListener("pointerleave", () => { S.hover = null; overlay(); });
@@ -687,7 +710,7 @@ function tidyForm() {
   $("tidyGap").closest("label").hidden = step !== "thin";
   const how = $("tidyHow"); how.replaceChildren();
   const choices = step === "halo" ? [["gentle", "gentle"], ["stronger", "stronger"]] : step === "fringe" ? [["2", "bits up to 2 cells"], ["4", "bits up to 4 cells"], ["8", "bits up to 8 cells"]]
-    : step === "edge" ? [["1", "1 cell, current colour"], ["2", "2 cells, current colour"], ["3", "3 cells, current colour"]] : step.startsWith("smooth") ? [["1", "once"], ["2", "twice"], ["3", "three times"]]
+    : step === "edge" || step === "outline" ? [["1", "1 cell, current colour"], ["2", "2 cells, current colour"], ["3", "3 cells, current colour"]] : step.startsWith("smooth") ? [["1", "once"], ["2", "twice"], ["3", "three times"]]
     : [["gentle", "gentle"], ["balanced", "balanced"], ["strong", "strong"]];
   for (const [value, label] of choices) { const o = document.createElement("option"); o.value = value; o.textContent = label; how.append(o); }
   if (step === "fringe" || step === "clean") how.selectedIndex = 1;
@@ -704,10 +727,12 @@ $("tidyGo").onclick = () => {
   if (kind === "thin") { step.width = +$("tidyWidth").value; step.gap = +$("tidyGap").value; if ($("tidyInk").value === "colour") step.color = S.colour; }
   else if (kind === "fringe") step.max = +$("tidyHow").value;
   else if (kind === "edge") Object.assign(step, { inside: true, color: S.colour, width: +$("tidyHow").value });
+  else if (kind === "outline") Object.assign(step, { grow: false, color: S.colour, width: +$("tidyHow").value });
   else if (kind === "smooth") step.passes = +$("tidyHow").value;
   else if (kind === "smooth-lines") { Object.assign(step, { what: "lines", passes: +$("tidyHow").value, width: +$("tidyWidth").value }); if ($("tidyInk").value === "colour") step.color = S.colour; }
   else step.strength = $("tidyHow").value;
   if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] }, $("tidyProtect").value === "outside" ? { protect: true } : {});
+  if ($("tidyOnly").value) step.only = [S.colour];
   const reach = $("tidyFrames").value, picked = pickedFrames(), frames = reach === "all" ? "all" : reach === "picked" && picked ? picked : [S.frame];
   if (frames === "all" || frames.length > 1) step.steady = true;       // what stands still stays the same in every frame
   proposeOp(`${$("tidyStep").selectedOptions[0].textContent}, on ${frames === "all" ? "all frames" : frames.length > 1 ? `frames ${frames[0] + 1} to ${frames[frames.length - 1] + 1}` : "frame " + (S.frame + 1)}.`, { op: "edits", layer: S.layer, frames, steps: [step] });

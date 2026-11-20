@@ -367,6 +367,9 @@ class Loops(Case):
         self.assertTrue(any(len(a) and len(b) and a[:, 1].mean() != b[:, 1].mean() for a, b in zip(spots, spots[1:])))   # they fly
         water = frames[:, 60:]
         self.assertTrue((water == water[0]).all())                                         # and nothing else moved
+        self.run_job(**job, loop={"seconds": 2, "fps": 8, "seed": 2, "regions": [{"kind": "fireflies", "area": [0, 0.35, 1, 0.5], "amount": 2, "size": 3}]})
+        big = (np.stack(self.frames_of("out.gif")) == np.array((255, 230, 128))).all(axis=3)
+        self.assertTrue(any(int(frame.sum()) % 5 == 0 and frame.any() for frame in big))   # five cells each: a small cross
         with self.assertRaisesRegex(ValueError, "wind is"):
             self.run_job(**job, loop={"regions": [{"kind": "leaves", "wind": "up"}]})
 
@@ -574,6 +577,17 @@ class Edits(Case):
         self.assertEqual(tuple(self.native(image, {"op": "clean", "strength": "strong"})[6, 6, :3]), (250, 240, 60))   # too big and too different for the ordinary step
         inner = self.native(image, {"op": "outline", "inside": True, "color": "#101018", "rect": [0, 0, 20, 30]})
         self.assertEqual((tuple(inner[0, 3, :3]), tuple(inner[0, 30, :3])), ((16, 16, 24), (60, 120, 200)))   # an inner outline can be kept to an area
+
+    def test_a_cleanup_step_can_be_kept_to_some_colours(self):
+        image = np.zeros((20, 30, 4), dtype=np.uint8)
+        image[..., 3] = 255
+        image[:, :15, :3] = (200, 40, 40)
+        image[:, 15:, :3] = (40, 80, 220)
+        out = self.native(image, {"op": "replace", "from": "#c82828", "to": "#ffffff", "only": ["#2850dc"]})
+        self.assertEqual(colours(out), {"#c82828", "#2850dc"})      # the red is not among the colours that may change
+        out = self.native(image, {"op": "outline", "inside": True, "color": "#101018", "only": ["#2850dc"]})
+        dark = (out[..., :3] == (16, 16, 24)).all(axis=2)
+        self.assertTrue(dark[0, 15:].all() and not dark[0, :15].any())   # the rim is drawn on the blue half only
 
     def test_an_outline_can_be_wider_or_sit_inside(self):
         image = np.zeros((20, 20, 4), dtype=np.uint8)

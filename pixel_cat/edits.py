@@ -311,7 +311,8 @@ def smooth(images, step):
 OPS = {"cutout": cutout, "trim": trim, "outline": outline, "pad": pad, "flip": flip, "shift": shift, "replace": replace, "clean": clean,
        "hold": hold, "thin": thin, "halo": halo, "fringe": fringe, "smooth": smooth}
 # these also take an area and then change nothing outside it; with "protect": true, nothing inside it. With
-# "steady": true, cells that showed the same in every frame before the step show the same after it.
+# "only": [colours], just cells of those colours change. With "steady": true, cells that showed the same in
+# every frame before the step show the same after it.
 LIMITED = ("replace", "clean", "thin", "halo", "fringe", "smooth")
 
 
@@ -323,11 +324,12 @@ def apply(images, steps):
             raise ValueError(f"Edit {number}: op is one of {', '.join(OPS)}")
         try:
             limited = step["op"] in LIMITED or (step["op"] == "outline" and (step.get("inside") or step.get("grow") is False))
-            where = {k: step[k] for k in ("rect", "points", "cells", "protect") if k in step} if limited else {}
+            where = {k: step[k] for k in ("rect", "points", "cells", "protect", "only") if k in step} if limited else {}
             steady = limited and bool(step.get("steady")) and len(images) > 1
             if where or steady:
-                if len(where) == 1 and "protect" in where:
+                if where.get("protect") and not any(k in where for k in ("rect", "points", "cells")):
                     raise ValueError("protect needs an area: rect, points or cells")
+                only = [c[0] << 16 | c[1] << 8 | c[2] for c in map(rgb, where.get("only") or [])]
                 done = OPS[step["op"]]([image.copy() for image in images], {k: v for k, v in step.items() if k not in where and k != "steady"})
                 if steady:                                        # what stood still before the step stands still after it
                     still = np.all([(image == images[0]).all(axis=2) for image in images[1:]], axis=0)
@@ -337,7 +339,8 @@ def apply(images, steps):
                 if where.get("protect"):                          # the area is what must stay as it is
                     mask = ~mask
                 for image, changed in zip(images, done):
-                    image[mask] = changed[mask]
+                    reach = mask & np.isin(stills.codes(image[..., :3]), only) & (image[..., 3] >= 128) if only else mask
+                    image[reach] = changed[reach]                 # with `only`, just cells that had one of these colours
             else:
                 images = OPS[step["op"]](images, {k: v for k, v in step.items() if k != "steady"} if limited else step)
         except (ValueError, TypeError) as error:

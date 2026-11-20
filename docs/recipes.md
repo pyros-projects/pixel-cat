@@ -82,7 +82,7 @@ Finishing steps on the converted art, applied in order to every frame.
 | `smooth` | takes single-cell bumps off an edge and fills single-cell dents in it; tips of thin lines and deeper gaps stay | `what`: `silhouette` (the border between drawing and emptiness, the default) or `lines` (dark cells, or cells near `color`), `passes` (1 to 4) |
 | `hold` | makes an area of an animation stand still: its cells are copied from one frame into the others, and everything outside keeps moving. With `outside`, it is the other way round: only the area keeps moving. | `from` (the frame to copy, default 0), `frames` (`"all"` or a list), `outside`, and the area: `rect` `[x, y, width, height]`, `points` (a polygon) or `cells` (a list of `[x, y]`), all in cells |
 
-`replace`, `clean`, `thin`, `halo`, `fringe` and `smooth` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it. With `"protect": true` it is the other way round: nothing inside the area changes. In an animation, `"steady": true` makes sure that a cell which showed the same in every frame before the step shows the same after it, so a cleanup cannot start a flicker.
+`replace`, `clean`, `thin`, `halo`, `fringe` and `smooth` also take an area (`rect`, `points` or `cells`, in cells) and then change nothing outside it. With `"protect": true` it is the other way round: nothing inside the area changes. `"only": ["#RRGGBB", ...]` lets a step change just the cells that have one of these colors. In an animation, `"steady": true` makes sure that a cell which showed the same in every frame before the step shows the same after it, so a cleanup cannot start a flicker.
 
 A step with a wrong setting stops the job and names itself: `Edit 2 (outline): color is a colour written as #RRGGBB`. In a recipe with both `edits` and `loop`, the edits come first.
 
@@ -106,7 +106,7 @@ Turns a still picture into a seamless loop. The picture is converted first, then
 | `seconds` | length of the loop, 1 to 20 | 4 |
 | `fps` | 4, 6, 8, 10 or 12 | 8 |
 | `seed` | changes which lights twinkle when | 1 |
-| `regions` | a list; each region has a `kind`, an `area` and an `amount`. `fireflies`, `leaves` and `birds` also take a `color` or a list of `colors`; `leaves` take `wind`: `left`, `right` or `none`. | |
+| `regions` | a list; each region has a `kind`, an `area` and an `amount`. `fireflies`, `leaves` and `birds` also take a `color` or a list of `colors`; `fireflies` take `size` (1, 2 or 3: one cell, four, or a small cross); `leaves` take `wind`: `left`, `right` or `none`. | |
 
 | Kind | Motion |
 | --- | --- |
