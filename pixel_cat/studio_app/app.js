@@ -409,8 +409,9 @@ function pointAt(event) {                   // the same place, not rounded to a 
 }
 function closePolygon() { const shape = S.poly && shapeFrom(S.poly); S.poly = null; if (shape) S.sel = shape; draw(); context(); reportView(); }
 let drag = null;
+const onPanel = event => !!event.target.closest(".findings, .proposal");   // the panels lie on the stage: what happens on them is theirs
 stage.addEventListener("pointerdown", event => {
-  if (!S.doc || event.button === 2) return;
+  if (!S.doc || event.button === 2 || onPanel(event)) return;
   stage.setPointerCapture(event.pointerId); stopPlaying();
   const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey && !["pose", "mask", "guard"].includes(S.tool) ? "picker" : S.tool;
   drag = { tool, x, y, lastX: x, lastY: y, startX: event.clientX, startY: event.clientY, panX: S.panX, panY: S.panY, shift: event.shiftKey };
@@ -526,6 +527,7 @@ stage.addEventListener("pointerup", event => {
 });
 stage.addEventListener("pointerleave", () => { S.hover = null; overlay(); });
 stage.addEventListener("wheel", event => {
+  if (onPanel(event)) return;                // a long panel scrolls
   event.preventDefault();
   const r = stage.getBoundingClientRect(), mx = event.clientX - r.left, my = event.clientY - r.top, before = S.zoom; S.moved = true;
   S.zoom = Math.max(1, Math.min(48, S.zoom + (event.deltaY < 0 ? 1 : -1) * Math.max(1, Math.round(S.zoom / 8))));
@@ -961,7 +963,7 @@ $("importDialog").addEventListener("close", async () => {
   try {
     const response = await fetch(`/api/import?name=${encodeURIComponent(incoming.name)}&how=${$("importHow").value}&settings=${encodeURIComponent(JSON.stringify(settings))}`, { method: "POST", body: incoming });
     const done = await response.json(); if (!response.ok) throw new Error(done.error);
-    S.known = Math.max(S.known, done.rev); S.fitted = false; await load(true);
+    S.known = Math.max(S.known, done.rev); S.fitted = false; if (how === "project") S.guard = null; await load(true);   // another picture: its protection goes with the old one
     if (how === "layer") { S.layer = S.doc.layers.length - 1; S.sel = null; setTool("move"); layers(); timeline(); context(); draw(); }   // in hand, ready to be moved into place
     toast(`${done.summary.width} × ${done.summary.height} cells, ${done.summary.frames} frame${done.summary.frames > 1 ? "s" : ""}, ${done.summary.colors} colours`);
   } catch (error) { fail(error); } finally { S.pending--; incoming = null; }
