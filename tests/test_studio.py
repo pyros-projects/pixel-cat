@@ -379,6 +379,39 @@ class Joints(unittest.TestCase):
         moved = joints.warp(image, joints.matrix((0, 0), 0, 3, -2))
         self.assertTrue((moved[18, 7:40] == image[20, 4:37]).all())
 
+    def window(self):
+        """A lit window: warm patches behind bars one cell wide, with an empty rim around it."""
+        shades = np.array([(214, 132, 52), (190, 110, 44), (236, 160, 70), (160, 92, 40)], dtype=np.uint8)
+        art = np.zeros((30, 40, 4), dtype=np.uint8)
+        art[..., :3] = shades[np.random.default_rng(5).integers(0, 4, (30, 40))]
+        art[::5, :, :3] = art[:, ::4, :3] = (40, 24, 20)
+        art[..., 3] = 255
+        image = np.zeros((60, 60, 4), dtype=np.uint8)
+        image[15:45, 10:50] = art
+        return image, art
+
+    def test_a_move_without_a_turn_lands_on_whole_cells(self):
+        image, art = self.window()
+        p = Project.from_frames([image], [100])
+        p.apply({"op": "joint", "layer": 0, "pivot": [30.5, 30.5]})
+        # between two cells the drawing goes to the nearer one, as it is: no bar breaks and no patch changes colour
+        # (exactly half a cell is the art under each cell's centre too: the cell before)
+        for (x, y), (cx, cy) in {(0.527, 1.588): (1, 2), (0.49, -0.49): (0, 0), (-1.6, 2.3): (-2, 2), (3.0, -4.0): (3, -4), (1.5, -0.5): (1, -1)}.items():
+            p.apply({"op": "pose", "layer": 0, "frame": 0, "x": x, "y": y})
+            shown = p.composite(0)
+            self.assertTrue((shown[15 + cy:45 + cy, 10 + cx:50 + cx] == art).all(), (x, y))
+            self.assertEqual(int((shown[..., 3] > 0).sum()), art.shape[0] * art.shape[1], (x, y))
+
+    def test_a_quarter_turn_is_exact_around_any_point(self):
+        from pixel_cat import joints
+
+        image, art = self.window()
+        for pivot, x, y in (((30.5, 30.5), 0, 0), ((30, 30), 0.45, 0.55), ((29.3, 30.6), -0.2, 0.4)):
+            turned = joints.warp(image, joints.matrix(pivot, 90, x, y))
+            ys, xs = np.nonzero(turned[..., 3] > 0)
+            found = turned[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+            self.assertTrue(found.shape == (40, 30, 4) and (found == np.rot90(art, -1)).all(), (pivot, x, y))
+
 
 class Studios(unittest.TestCase):
     """The server owns the project. The page and the agent change it through the same door."""

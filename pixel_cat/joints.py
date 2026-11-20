@@ -174,9 +174,17 @@ def warp(image, m, k=4):
 
     Every cell of the result is looked at in k by k places. It is filled when at least half of them land on
     art, and it takes the colour most of them found; in a close vote the colour at its centre decides, so a
-    line one cell wide that falls between two cells stays whole. Quarter turns and whole-cell moves come out
-    exactly.
+    line one cell wide that falls between two cells stays whole.
+
+    Without a turn, or with a quarter turn, cells land on cells: every cell takes the art under its centre, so
+    the drawing arrives at the nearest whole cell exactly as drawn. Voting there would break up a fine pattern
+    wherever a move ends between cells.
     """
+    turn = np.round(m[:2, :2])
+    if np.allclose(m[:2, :2], turn, atol=1e-9):
+        m = np.array(m, dtype=np.float64)
+        m[:2, :2] = turn
+        m[:2, 2] = -turn @ np.floor(0.5 - turn.T @ m[:2, 2] + 1e-9)     # the whole-cell move that puts the same art under each centre
     if np.allclose(m, np.eye(3), atol=1e-9):
         return image
     h, w = image.shape[:2]

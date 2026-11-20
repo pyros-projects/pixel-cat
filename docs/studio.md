@@ -45,7 +45,7 @@ A layer can turn around a pivot, and it can hang on another layer: a hand on a f
 
 Between two keys the part moves smoothly, evenly, not at all until it jumps, back first and then off, or past the mark and back. With "the motion closes into a loop" the frames after the last key lead into the first one. "Lags behind its parent" lets a part trail the turning of what carries it, the way a hand or a tail does. "Sways on its own" swings it to and fro, a whole number of times per loop. "Cover the joint" puts a disc in the current colour at the pivot, on a new layer below the part, so that no gap opens when the part turns.
 
-While you draw on a jointed layer it shows at rest, because that is the drawing you are changing; the pose tool shows it in motion again. Turning is done cell by cell: a cell is filled when at least half of it is covered and takes the colour that covers most of it, so outlines one cell wide stay whole. Quarter turns come out exactly. "Bake" turns the motion into plain frames that you can touch up by hand; the joint goes, and so do the joints of everything that hung on it.
+While you draw on a jointed layer it shows at rest, because that is the drawing you are changing; the pose tool shows it in motion again. Turning is done cell by cell: a cell is filled when at least half of it is covered and takes the colour that covers most of it, so outlines one cell wide stay whole. Quarter turns come out exactly, and a part that moves without turning goes to the nearest whole cell as it is drawn, so a fine pattern stays intact. "Bake" turns the motion into plain frames that you can touch up by hand; the joint goes, and so do the joints of everything that hung on it.
 
 ## Working with an agent
 
