@@ -3,17 +3,19 @@
     {"format": "pixel-cat project", "version": 1, "width": 64, "height": 64,
      "palette": ["#101018", ...],
      "frames": [{"duration": 120}, ...],
-     "layers": [{"name": "Colour", "visible": true, "locked": false, "opacity": 1,
+     "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
                  "cels": ["<PNG, base64>", null, ...]}]}
 
 Layers are listed from the bottom up. Every layer holds one cel per frame; an empty cel is null. A cel is a
-PNG of the project's size, so any tool that reads JSON and PNG can read a project.
+PNG of the project's size, so any tool that reads JSON and PNG can read a project. A layer can carry a
+"joint": then its cels are the drawing at rest, and its keys turn and move it (see joints.py).
 
 Everything that changes a project goes through `apply`, one small JSON operation at a time. The studio's
 browser, an agent and a script all speak the same operations.
 """
 
 import base64
+import copy
 import io
 import json
 from pathlib import Path
@@ -21,7 +23,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import edits, stills
+from . import edits, joints, stills
 from .options import integer, keys
 
 FORMAT = "pixel-cat project"
@@ -59,11 +61,21 @@ class Project:
         self.layers = [self._layer("Layer 1")]
         self.palette = []
         self.locked = False              # a locked palette: whatever is drawn takes the nearest palette colour
+        self._posed = {}                 # jointed cels as they appear, kept until their drawing or pose changes
 
     # ------------------------------------------------------------ building
 
+    def _new_id(self):
+        taken = {layer.get("id") for layer in getattr(self, "layers", [])}
+        return next(f"L{n}" for n in range(1, len(taken) + 2) if f"L{n}" not in taken)
+
     def _layer(self, name):
-        return {"name": name, "visible": True, "locked": False, "opacity": 1.0, "cels": [None] * len(self.frames)}
+        return {"id": self._new_id(), "name": name, "visible": True, "locked": False, "opacity": 1.0, "cels": [None] * len(self.frames)}
+
+    @staticmethod
+    def _tracks(layer):
+        """The lists of a layer that hold one entry per frame."""
+        return [layer["cels"]] + ([layer["joint"]["keys"]] if layer.get("joint") else [])
 
     def blank(self):
         return np.zeros((self.height, self.width, 4), dtype=np.uint8)
@@ -102,9 +114,11 @@ class Project:
         other = object.__new__(Project)
         other.width, other.height = self.width, self.height
         other.frames = [dict(f) for f in self.frames]
-        other.layers = [dict(layer, cels=list(layer["cels"])) for layer in self.layers]
+        other.layers = [dict(layer, cels=list(layer["cels"]), **({"joint": copy.deepcopy(layer["joint"])} if layer.get("joint") else {}))
+                        for layer in self.layers]
         other.palette = list(self.palette)
         other.locked = self.locked
+        other._posed = self._posed
         return other
 
     # ------------------------------------------------------------ files
@@ -130,9 +144,18 @@ class Project:
             if len(layer["cels"]) != len(project.frames):
                 raise ValueError("Every layer needs one cel per frame")
             cels = [None if c is None else from_png(base64.b64decode(c), (project.width, project.height)) for c in layer["cels"]]
-            project.layers.append({"name": str(layer.get("name", "Layer")), "visible": bool(layer.get("visible", True)),
+            taken = {known["id"] for known in project.layers}
+            name = layer.get("id") if isinstance(layer.get("id"), str) and layer.get("id") not in taken else project._new_id()
+            project.layers.append({"id": name, "name": str(layer.get("name", "Layer")), "visible": bool(layer.get("visible", True)),
                                    "locked": bool(layer.get("locked", False)), "opacity": float(layer.get("opacity", 1)),
                                    "cels": [c if c is not None and c[..., 3].any() else None for c in cels]})
+            if layer.get("joint"):
+                project.layers[-1]["joint"] = joints.clean(layer["joint"], len(project.frames), project.width, project.height)
+        for index, layer in enumerate(project.layers):               # a joint hangs on a jointed layer, and never on itself
+            if layer.get("joint") and layer["joint"]["parent"] is not None:
+                parent = joints.parent_of(project.layers, index)
+                if parent is None or index in [parent] + joints.chain(project.layers, parent):
+                    layer["joint"]["parent"] = None
         return project
 
     @classmethod
@@ -147,11 +170,22 @@ class Project:
 
     # ------------------------------------------------------------ looking
 
+    def shown(self, layer, frame):
+        """A cel as it appears: a jointed layer is turned and moved by its pose and carried by its parents."""
+        cel = self.layers[layer]["cels"][frame]
+        if cel is None or not self.layers[layer].get("joint"):
+            return cel
+        pose = joints.world(self.layers, layer, frame, len(self.frames))[0]
+        mark, kept = tuple(np.round(pose, 6).ravel()), self._posed.get((self.layers[layer]["id"], frame))
+        if kept is None or kept[0] is not cel or kept[1] != mark:
+            kept = self._posed[(self.layers[layer]["id"], frame)] = (cel, mark, joints.warp(cel, pose))
+        return kept[2]
+
     def composite(self, frame, only=None):
         """One frame as it looks: the visible layers from the bottom up."""
         out = self.blank().astype(np.float64)
         for index, layer in enumerate(self.layers):
-            cel = layer["cels"][frame]
+            cel = self.shown(index, frame)
             if cel is None or not layer["visible"] or (only is not None and index != only):
                 continue
             cover = cel[..., 3:4] / 255 * layer["opacity"]
@@ -168,7 +202,10 @@ class Project:
         return {"width": self.width, "height": self.height, "frames": len(self.frames),
                 "durations": [f["duration"] for f in self.frames], "palette": len(self.palette), "locked": self.locked,
                 "layers": [{"name": layer["name"], "visible": layer["visible"], "locked": layer["locked"],
-                            "cels": [c is not None for c in layer["cels"]]} for layer in self.layers]}
+                            "cels": [c is not None for c in layer["cels"]],
+                            **({"joint": {"pivot": layer["joint"]["pivot"], "parent": joints.parent_of(self.layers, index),
+                                          "keys": [f for f, k in enumerate(layer["joint"]["keys"]) if k]}} if layer.get("joint") else {})}
+                           for index, layer in enumerate(self.layers)]}
 
     # ------------------------------------------------------------ changing
 
@@ -265,7 +302,11 @@ class Project:
         if kind == "remove-layer":
             if layers == 1:
                 raise ValueError("A project keeps at least one layer")
-            return f"removed layer {self.layers.pop(self._at(op, 'layer', layers))['name']}"
+            gone = self.layers.pop(self._at(op, "layer", layers))
+            for layer in self.layers:                                 # what hung on it hangs on its parent now
+                if layer.get("joint") and layer["joint"]["parent"] == gone["id"]:
+                    layer["joint"]["parent"] = gone["joint"]["parent"] if gone.get("joint") else None
+            return f"removed layer {gone['name']}"
         if kind == "move-layer":
             layer = self.layers.pop(self._at(op, "layer", layers))
             self.layers.insert(integer(op.get("to", 0), 0, layers - 1, "to"), layer)
@@ -284,6 +325,9 @@ class Project:
             upper = self._at(op, "layer", layers)
             if upper == 0:
                 raise ValueError("The bottom layer has nothing below it")
+            for layer in self.layers[upper - 1:upper + 1]:
+                if layer.get("joint"):
+                    raise ValueError(f"Layer {layer['name']} has a joint. Bake it first, then merge.")
             keep = self.snapshot()
             for layer in keep.layers:
                 layer["visible"] = False
@@ -302,6 +346,9 @@ class Project:
             self.frames.insert(at, {"duration": self.frames[source]["duration"] if source is not None else 120})
             for layer in self.layers:
                 layer["cels"].insert(at, layer["cels"][source] if source is not None else None)
+                if layer.get("joint"):                                # a copied frame keeps its key
+                    held = layer["joint"]["keys"][source] if source is not None else None
+                    layer["joint"]["keys"].insert(at, dict(held) if held else None)
             return f"added frame {at}"
         if kind == "remove-frame":
             if frames == 1:
@@ -309,13 +356,15 @@ class Project:
             at = self._at(op, "frame", frames)
             self.frames.pop(at)
             for layer in self.layers:
-                layer["cels"].pop(at)
+                for track in self._tracks(layer):
+                    track.pop(at)
             return f"removed frame {at}"
         if kind == "move-frame":
             at, to = self._at(op, "frame", frames), integer(op.get("to", 0), 0, frames - 1, "to")
             self.frames.insert(to, self.frames.pop(at))
             for layer in self.layers:
-                layer["cels"].insert(to, layer["cels"].pop(at))
+                for track in self._tracks(layer):
+                    track.insert(to, track.pop(at))
             return f"moved frame {at} to {to}"
         if kind == "set-frame":
             targets = range(frames) if op.get("frame") == "all" else [self._at(op, "frame", frames)]
@@ -381,6 +430,86 @@ class Project:
                 image[mask] = source[mask]
                 self.put(layer, frame, image)
             return f"held {int(mask.sum())} cells of frame {op.get('from', 0)} still, {changed} cells changed"
+        if kind == "joint":
+            # a layer turns around a pivot and can hang on another jointed layer
+            keys(op, {"op", "layer", "frame", "pivot", "parent", "wrap", "drag", "spread", "remove"}, "joint")
+            index = self._at(op, "layer", layers)
+            layer = self.layers[index]
+            if op.get("remove"):
+                if not layer.get("joint"):
+                    raise ValueError(f"Layer {layer['name']} has no joint")
+                gone = layer.pop("joint")
+                for other in self.layers:
+                    if other.get("joint") and other["joint"]["parent"] == layer["id"]:
+                        other["joint"]["parent"] = gone["parent"]
+                return f"removed the joint of layer {layer['name']}; its drawing stays as it is at rest"
+            new = not layer.get("joint")
+            if new:
+                if "pivot" not in op:
+                    raise ValueError("A new joint needs a pivot, the point the layer turns around: [x, y] in cells")
+                layer["joint"] = {"pivot": [0.0, 0.0], "parent": None, "wrap": True, "drag": None, "keys": [None] * frames}
+            joint = layer["joint"]
+            try:
+                if "pivot" in op:
+                    joint["pivot"] = joints.point(op["pivot"], self.width, self.height)
+                if "parent" in op and op["parent"] is not None:
+                    parent = integer(op["parent"], 0, layers - 1, "parent")
+                    if not self.layers[parent].get("joint"):
+                        raise ValueError(f"Layer {self.layers[parent]['name']} has no joint to hang on. Give it one first.")
+                    if index in [parent] + joints.chain(self.layers, parent):
+                        raise ValueError(f"Layer {self.layers[parent]['name']} already hangs on layer {layer['name']}")
+                    joint["parent"] = self.layers[parent]["id"]
+                elif "parent" in op:
+                    joint["parent"] = None
+                if "wrap" in op:
+                    joint["wrap"] = bool(op["wrap"])
+                if "drag" in op:
+                    joint["drag"] = joints.drag(op["drag"])
+            except ValueError:
+                if new:
+                    layer.pop("joint")
+                raise
+            if op.get("spread"):                                      # one drawing for every frame that has none
+                source = layer["cels"][self._at(op, "frame", frames)]
+                if source is not None:
+                    layer["cels"] = [source if c is None else c for c in layer["cels"]]
+            on = joints.parent_of(self.layers, index)
+            return (f"gave layer {layer['name']} a joint" if new else f"changed the joint of layer {layer['name']}") + \
+                (f", hanging on {self.layers[on]['name']}" if on is not None else "")
+        if kind == "pose":
+            # a key on one frame: how far the jointed layer is turned and moved there
+            keys(op, {"op", "layer", "frame", "angle", "x", "y", "ease", "remove"}, "pose")
+            layer, frame = self.layers[self._at(op, "layer", layers)], self._at(op, "frame", frames)
+            joint = layer.get("joint")
+            if not joint:
+                raise ValueError(f'Layer {layer["name"]} has no joint. Give it one first: {{"op": "joint", "layer": ..., "pivot": [x, y]}}')
+            if op.get("remove"):
+                if joint["keys"][frame] is None:
+                    raise ValueError(f"Frame {frame} has no key on layer {layer['name']}")
+                joint["keys"][frame] = None
+                return f"removed the key of layer {layer['name']} on frame {frame}"
+            angle, x, y = joints.local(joint, frame, frames)          # what the frame shows now is where the key starts
+            held = dict(joint["keys"][frame] or {"angle": angle, "x": x, "y": y, "ease": "smooth"})
+            held.update({name: op[name] for name in ("angle", "x", "y", "ease") if name in op})
+            joint["keys"][frame] = held = joints.key(held)
+            return f"posed layer {layer['name']} on frame {frame}: turned {held['angle']:g} degrees, moved {held['x']:g}, {held['y']:g}"
+        if kind == "bake":
+            # the motion becomes plain frames, and the joints go
+            keys(op, {"op", "layer"}, "bake")
+            if "layer" in op:
+                index = self._at(op, "layer", layers)
+                if not self.layers[index].get("joint"):
+                    raise ValueError(f"Layer {self.layers[index]['name']} has no joint")
+                chosen = [index] + joints.hanging_on(self.layers, index)
+            else:
+                chosen = [i for i, layer in enumerate(self.layers) if layer.get("joint")]
+                if not chosen:
+                    raise ValueError("No layer has a joint")
+            pictures = {i: [self.shown(i, f) for f in range(frames)] for i in chosen}
+            for i, cels in pictures.items():
+                self.layers[i].pop("joint")
+                self.layers[i]["cels"] = [None if c is None or not c[..., 3].any() else self.snap(c) for c in cels]
+            return f"baked the motion of {len(chosen)} layer{'s' if len(chosen) != 1 else ''} into {'their' if len(chosen) != 1 else 'its'} frames"
         if kind == "place":
             # converted frames as a new layer, starting at a frame; the project grows by frames as needed
             images = [from_png(base64.b64decode(p)) for p in op["frames"]]
@@ -392,7 +521,8 @@ class Project:
                     raise ValueError("A project holds up to 256 frames")
                 self.frames.append({"duration": 120})
                 for layer in self.layers:
-                    layer["cels"].append(None)
+                    for track in self._tracks(layer):
+                        track.append(None)
             new = self._layer(str(op.get("name") or "Imported"))
             x, y = int(op.get("x", 0)), int(op.get("y", 0))
             for index, image in enumerate(images):
@@ -424,10 +554,13 @@ class Project:
                     if x1 > x0 and y1 > y0:
                         canvas[y0:y1, x0:x1] = cel[y0 - dy:y1 - dy, x0 - dx:x1 - dx]
                     layer["cels"][frame] = canvas if canvas[..., 3].any() else None
+                if layer.get("joint"):
+                    layer["joint"]["pivot"] = [layer["joint"]["pivot"][0] + dx, layer["joint"]["pivot"][1] + dy]
             self.width, self.height = width, height
             return f"canvas is now {width} by {height}"
         raise ValueError(f"Unknown operation: {kind}")
 
 
 OPERATIONS = ["draw", "clear", "set-cel", "add-layer", "remove-layer", "move-layer", "set-layer", "merge-down", "add-frame",
-              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "place", "resize"]
+              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "joint", "pose", "bake",
+              "place", "resize"]

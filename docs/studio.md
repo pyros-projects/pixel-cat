@@ -12,7 +12,7 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 ## The page
 
 - **Canvas** in the middle. Scroll to zoom, hold Space and drag to pan, `0` fits the picture to the window.
-- **Tools** on the left: pencil `B`, eraser `E`, fill `G`, colour picker `I` (or hold Alt), line `L`, rectangle `R` (Shift fills it), select a box `M`, lasso `Q`, polygon `W`, move `V`, pan `H`. Below them the brush size, 1 to 16 cells (`[` and `]`), mirror `X`, and fit.
+- **Tools** on the left: pencil `B`, eraser `E`, fill `G`, colour picker `I` (or hold Alt), line `L`, rectangle `R` (Shift fills it), select a box `M`, lasso `Q`, polygon `W`, move `V`, pose `J`, pan `H`. Below them the brush size, 1 to 16 cells (`[` and `]`), mirror `X`, and fit.
 - **Timeline** at the bottom: one column per frame, one row per layer, each cel as a small picture. A click picks the frame and the layer at once. Space plays, Left and Right step through the frames, Up and Down through the layers. Onion skin shows the neighbouring frames faintly.
 - **Colour, layers and chat** on the right. Layers can be hidden, locked, renamed (double-click), faded, reordered and merged. The palette comes from the art with one click.
 - **Selections:** a box, a lasso drawn around an area, or a polygon (click the corners, Enter closes, Backspace takes the last corner back). While something is selected, drawing stays inside it. Move with the move tool or the arrow keys (Shift: ten cells), Enter sets the moved piece down, Delete clears, Ctrl+C and Ctrl+V copy and paste (the copy also goes to the system clipboard as a PNG, and a picture copied elsewhere comes in through the import dialog), Ctrl+A selects everything, Ctrl+D or Escape lets go.
@@ -26,6 +26,19 @@ The command prints the address (`http://127.0.0.1:4178` unless you pass `--port`
 - **Import:** drop a picture, a GIF or a video on the canvas. It is converted first: to fit the canvas, the way pixel-cat recommends, or not at all. It lands on a new layer, after the last frame, or in place of the project.
 - **Export:** PNG of the frame, GIF, MP4, WebM, or the project file.
 - **Undo** (Ctrl+Z) and Redo cover everything, also what the agent did. The top bar names the last change and who made it.
+
+## Joints
+
+A layer can turn around a pivot, and it can hang on another layer: a hand on a forearm, a forearm on an upper arm, a tail on a body. You draw each part once, at rest, and pose it on a few frames. The frames between follow from those.
+
+1. Put each part on a layer of its own.
+2. Pick the pose tool (`J`), pick the part's layer and click where it turns: the elbow, the hip, the hinge. That is its pivot. The drawing of the frame you are on is copied to every frame that has none.
+3. Under "Hangs on", choose the part that carries it. Hang the parts on each other before you pose them.
+4. Go to a frame and drag on the picture to turn the part; Shift turns in steps of 15°, Alt+drag moves it by whole cells. Each change sets a key on that frame, marked by a small diamond in the timeline. Whatever hangs on the part comes along.
+
+Between two keys the part moves smoothly, evenly, not at all until it jumps, back first and then off, or past the mark and back. With "the motion closes into a loop" the frames after the last key lead into the first one. "Lags behind its parent" lets a part trail the turning of what carries it, the way a hand or a tail does.
+
+While you draw on a jointed layer it shows at rest, because that is the drawing you are changing; the pose tool shows it in motion again. Turning is done cell by cell: a cell is filled when at least half of it is covered and takes the colour that covers most of it, so outlines one cell wide stay whole. Quarter turns come out exactly. "Bake" turns the motion into plain frames that you can touch up by hand; the joint goes, and so do the joints of everything that hung on it.
 
 ## Working with an agent
 
@@ -69,6 +82,9 @@ Frames and layers are counted from 0; layer 0 is the bottom one. An operation th
 | `palette-from-art` | |
 | `edits` | `layer`, `frames` (`"all"` or a list), `steps`: the [finishing steps](recipes.md#edits) that keep the size |
 | `hold` | `layer`, `from`, `frames`, and `rect`, `points` or `cells`: an area of one frame, copied into the others, so that it stands still |
+| `joint` | `layer`, and any of `pivot` (`[x, y]` in cells; the centre of cell 8, 16 is `[8.5, 16.5]`), `parent` (a layer that has a joint, or `null`), `wrap`, `drag` (`{"frames": 2, "amount": 0.5}` or `null`), `spread` with `frame` (copy that frame's drawing to every empty frame), `remove` |
+| `pose` | `layer`, `frame`, and any of `angle` (degrees, clockwise), `x`, `y`, `ease` (`smooth`, `linear`, `hold`, `anticipate`, `overshoot`): sets a key. `remove` takes the key away. |
+| `bake` | `layer` (with everything that hangs on it), or nothing for all joints: the motion becomes plain frames |
 | `place` | `frames` (PNG images as base64), `name`, `frame`, `x`, `y`, `durations`: converted art as a new layer |
 | `resize` | `width`, `height`, and `x`, `y` to shift the art |
 
@@ -86,11 +102,20 @@ A project is one JSON file ending in `.pixelcat`:
 {"format": "pixel-cat project", "version": 1, "width": 32, "height": 32,
  "palette": ["#101018", "#f2a65a"],
  "frames": [{"duration": 120}, {"duration": 120}],
- "layers": [{"name": "Colour", "visible": true, "locked": false, "opacity": 1,
+ "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
              "cels": ["<PNG, base64>", null]}]}
 ```
 
 Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is a PNG of the project's size. A project has up to 256 frames, 32 layers and 1024 cells per side.
+
+A layer with a joint carries it in the file. Its cels are the drawing at rest; `keys` has one entry per frame, `null` where the frame lies between keys, and `parent` is the `id` of the layer it hangs on:
+
+```json
+"joint": {"pivot": [8.5, 16.5], "parent": "L2", "wrap": true, "drag": null,
+          "keys": [{"angle": 0, "x": 0, "y": 0, "ease": "smooth"}, null, {"angle": 90, "x": 0, "y": 0, "ease": "smooth"}, null]}
+```
+
+Exports and `pixel-cat look` show jointed layers as posed.
 
 The converter reads and writes projects like any other file:
 

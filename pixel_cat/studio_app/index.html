@@ -63,6 +63,23 @@
     <button id="loopGo" class="primary">Make the loop</button>
     <p>The loop takes the place of the frames. Undo brings them back.</p>
   </div>
+  <div id="jointPanel" class="findings" hidden>
+    <h3>Joint <button id="jointClose" class="quiet" title="Close">&times;</button></h3>
+    <p id="jointNone"></p>
+    <div id="jointSome">
+      <label>Hangs on <select id="jointParent"></select></label>
+      <label>Turned <span><input id="jointAngle" type="number" step="1"> °</span></label>
+      <label>Moved <span><input id="jointX" type="number" step="1"> <input id="jointY" type="number" step="1"></span></label>
+      <label>Then it goes <select id="jointEase"><option value="smooth">smoothly</option><option value="linear">evenly</option><option value="hold">nowhere, then jumps</option><option value="anticipate">back first, then off</option><option value="overshoot">past the mark, then back</option></select></label>
+      <p id="jointKey"></p>
+      <div class="pair"><button id="jointSet">Set key</button><button id="jointUnset">Remove key</button></div>
+      <label>Lags behind its parent <select id="jointDrag"><option value="0">no</option><option value="0.3">a little</option><option value="0.6">more</option><option value="1">a lot</option></select></label>
+      <label class="check"><input type="checkbox" id="jointWrap"> the motion closes into a loop</label>
+      <div class="pair"><button id="jointPivot" title="Then click the new pivot on the picture">Set pivot</button><button id="jointBake" title="Turn the motion into plain frames; the joint goes">Bake</button><button id="jointRemove" title="Remove the joint; the drawing stays at rest">Remove</button></div>
+      <p>Drag on the picture to turn the layer (Shift: steps of 15°), Alt+drag to move it. Each change sets a key on this frame.</p>
+    </div>
+  </div>
+  <div id="restNote" class="hint" hidden>This layer has a joint: you are drawing it at rest. The pose tool (J) shows it in motion.</div>
   <div id="hint" class="hint" hidden>Draw, drop a picture here, or ask the agent in the chat.</div>
   <div id="where" class="where"></div>
 </main>

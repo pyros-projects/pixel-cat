@@ -1,6 +1,7 @@
 """Projects and the studio: one document, changed by small operations, by a person and an agent alike."""
 
 import base64
+import io
 import json
 import shutil
 import tempfile
@@ -163,6 +164,131 @@ class Projects(unittest.TestCase):
             execute({"input": "out.pixelcat", "convert": {"mode": "grid"}, "export": ["x.png"]}, self.folder)
 
 
+class Joints(unittest.TestCase):
+    """An arm: the forearm turns around the elbow, the hand hangs on the forearm at the wrist."""
+
+    RED, BLUE = (200, 40, 40, 255), (40, 80, 220, 255)
+
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        p = self.project = Project(40, 40)
+        for _ in range(3):
+            p.apply({"op": "add-frame"})
+        p.apply({"op": "set-layer", "layer": 0, "name": "Forearm"})
+        p.apply({"op": "draw", "frames": "all", "color": "#c82828", "rect": [8, 15, 12, 3]})          # elbow at 8, wrist at 20
+        p.apply({"op": "add-layer", "name": "Hand"})
+        p.apply({"op": "draw", "layer": 1, "frames": "all", "color": "#2850dc", "rect": [20, 14, 4, 5]})
+
+    def arm(self):
+        p = self.project
+        p.apply({"op": "joint", "layer": 0, "pivot": [8.5, 16.5]})
+        p.apply({"op": "joint", "layer": 1, "pivot": [20.5, 16.5], "parent": 0})
+        p.apply({"op": "pose", "layer": 0, "frame": 0, "angle": 0, "ease": "linear"})
+        p.apply({"op": "pose", "layer": 0, "frame": 2, "angle": 90, "ease": "linear"})
+        return p
+
+    def where(self, image, colour):
+        ys, xs = np.nonzero((image == colour).all(axis=2))
+        return (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())) if len(xs) else None
+
+    def test_a_hand_follows_a_turning_forearm_and_plays_the_same_from_the_file(self):
+        p = self.arm()
+        rest, down = p.composite(0), p.composite(2)
+        self.assertEqual((self.where(rest, self.RED), self.where(rest, self.BLUE)), ((8, 15, 19, 17), (20, 14, 23, 18)))
+        # a quarter turn clockwise around the elbow: the forearm points down, and the hand sits at its end
+        self.assertEqual((self.where(down, self.RED), self.where(down, self.BLUE)), ((7, 16, 9, 27), (6, 28, 10, 31)))
+        self.assertEqual((int((down == self.RED).all(axis=2).sum()), int((down == self.BLUE).all(axis=2).sum())), (36, 20))   # nothing lost
+        between = p.composite(1)                                    # half way, the hand is half way too
+        blue = self.where(between, self.BLUE)
+        self.assertTrue(12 < blue[0] < 20 and 20 < blue[1] < 28)
+        p.save(self.folder / "arm.pixelcat")
+        again = Project.load(self.folder / "arm.pixelcat")
+        for frame in range(4):
+            self.assertTrue((again.composite(frame) == p.composite(frame)).all())
+        self.assertEqual(again.summary()["layers"][1]["joint"], {"pivot": [20.5, 16.5], "parent": 0, "keys": []})
+
+    def test_a_hand_can_turn_at_the_wrist_on_top_of_what_the_forearm_does(self):
+        p = self.arm()
+        p.apply({"op": "pose", "layer": 1, "frame": 2, "angle": -90})
+        blue = self.where(p.composite(2), self.BLUE)                # turned back a quarter: the hand points right again
+        self.assertEqual(blue, (8, 26, 11, 30))
+        self.assertIn("turned -90 degrees", p.apply({"op": "pose", "layer": 1, "frame": 2, "angle": -90}))
+
+    def test_keys_wrap_into_a_loop_or_stop_at_the_ends(self):
+        from pixel_cat import joints
+
+        joint = {"wrap": True, "keys": [{"angle": 0, "x": 0, "y": 0, "ease": "linear"}, None, {"angle": 90, "x": 4, "y": 0, "ease": "linear"}, None]}
+        self.assertEqual([joints.local(joint, f, 4) for f in range(4)], [(0, 0, 0), (45, 2, 0), (90, 4, 0), (45, 2, 0)])
+        joint["wrap"] = False
+        self.assertEqual(joints.local(joint, 3, 4), (90, 4, 0))
+        joint["keys"][0]["ease"] = "hold"
+        self.assertEqual(joints.local(joint, 1, 4), (0, 0, 0))
+        self.assertLess(joints.ease("anticipate", 0.2), 0)          # pulls back first
+        self.assertGreater(joints.ease("overshoot", 0.8), 1)        # shoots past
+        for kind in joints.EASES:
+            self.assertAlmostEqual(joints.ease(kind, 1.0), 0.0 if kind == "hold" else 1.0)
+
+    def test_a_dragging_hand_lags_behind_the_forearm(self):
+        from pixel_cat import joints
+
+        p = self.arm()
+        stiff = joints.world(p.layers, 1, 1, 4)[1]
+        p.apply({"op": "joint", "layer": 1, "drag": {"frames": 1, "amount": 0.5}})
+        self.assertEqual((stiff, joints.world(p.layers, 1, 1, 4)[1]), (45.0, 22.5))   # the forearm turned 45 since the last frame
+
+    def test_frames_carry_their_keys_and_layers_keep_their_parents(self):
+        p = self.arm()
+        p.apply({"op": "add-frame", "at": 0})                       # everything moves one frame on
+        self.assertEqual(p.summary()["layers"][0]["joint"]["keys"], [1, 3])
+        p.apply({"op": "move-frame", "frame": 1, "to": 4})
+        self.assertEqual(p.summary()["layers"][0]["joint"]["keys"], [2, 4])
+        p.apply({"op": "remove-frame", "frame": 2})
+        self.assertEqual(p.summary()["layers"][0]["joint"]["keys"], [3])
+        p.apply({"op": "add-frame", "copy": 3})                     # a copied frame keeps its key
+        self.assertEqual(p.summary()["layers"][0]["joint"]["keys"], [3, 4])
+        p.apply({"op": "move-layer", "layer": 0, "to": 1})          # the order of layers does not matter to who hangs on whom
+        self.assertEqual(p.summary()["layers"][0]["joint"]["parent"], 1)
+        with self.assertRaisesRegex(ValueError, "Bake it first"):
+            p.apply({"op": "merge-down", "layer": 1})
+        with self.assertRaisesRegex(ValueError, "already hangs on"):
+            p.apply({"op": "joint", "layer": 1, "parent": 0})
+        p.apply({"op": "joint", "layer": 1, "remove": True})        # the forearm loses its joint: the hand hangs on nothing
+        self.assertIsNone(p.summary()["layers"][0]["joint"]["parent"])
+        with self.assertRaisesRegex(ValueError, "has no joint"):
+            p.apply({"op": "pose", "layer": 1, "frame": 0, "angle": 10})
+        with self.assertRaisesRegex(ValueError, "needs a pivot"):
+            p.apply({"op": "joint", "layer": 1})
+        self.assertNotIn("joint", p.layers[1])                      # a failed start leaves no half joint behind
+
+    def test_baking_turns_the_motion_into_plain_frames(self):
+        p = self.arm()
+        before = [p.composite(f) for f in range(4)]
+        self.assertIn("2 layers", p.apply({"op": "bake", "layer": 0}))   # the hand hangs on it, so it is baked too
+        self.assertFalse(any(layer.get("joint") for layer in p.layers))
+        for frame in range(4):
+            self.assertTrue((p.composite(frame) == before[frame]).all())
+        with self.assertRaisesRegex(ValueError, "No layer has a joint"):
+            p.apply({"op": "bake"})
+
+    def test_turning_keeps_thin_lines_whole(self):
+        from pixel_cat import joints
+
+        image = np.zeros((41, 41, 4), dtype=np.uint8)
+        image[20, 4:37] = (20, 20, 30, 255)                         # a line one cell thick through the middle
+        for angle in range(0, 180, 7):
+            turned = joints.warp(image, joints.matrix((20.5, 20.5), angle, 0, 0))[..., 3] > 0
+            self.assertGreaterEqual(int(turned.sum()), 28, angle)
+            # walk the line: every marked cell touches another one, so there is no gap in it
+            ys, xs = np.nonzero(turned)
+            near = sum(np.roll(np.roll(turned, dy, 0), dx, 1) for dy in (-1, 0, 1) for dx in (-1, 0, 1)) - turned
+            self.assertLessEqual(int((near[ys, xs] == 1).sum()), 2, angle)      # only its two ends have a single neighbour
+        quarter = joints.warp(image, joints.matrix((20.5, 20.5), 90, 0, 0))
+        self.assertTrue((quarter[4:37, 20, 3] == 255).all() and int((quarter[..., 3] > 0).sum()) == 33)   # a quarter turn is exact
+        moved = joints.warp(image, joints.matrix((0, 0), 0, 3, -2))
+        self.assertTrue((moved[18, 7:40] == image[20, 4:37]).all())
+
+
 class Studios(unittest.TestCase):
     """The server owns the project. The page and the agent change it through the same door."""
 
@@ -220,6 +346,23 @@ class Studios(unittest.TestCase):
         self.assertIn("painter48", self.call("/api/palettes"))
         with self.assertRaisesRegex(Exception, "Palettes: gameboy"):
             self.call("/api/op", {"op": {"op": "palette", "name": "nope"}})
+
+    def test_the_page_is_told_how_a_jointed_layer_appears(self):
+        self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [1, 3, 5, 1]}})
+        self.call("/api/op", {"op": {"op": "add-frame", "copy": 0}})
+        self.assertIn("gave layer Layer 1 a joint", self.call("/api/op", {"op": {"op": "joint", "layer": 0, "pivot": [1.5, 3.5]}})["note"])
+        self.call("/api/op", {"op": {"op": "pose", "layer": 0, "frame": 0, "angle": 0}})
+        self.call("/api/op", {"op": {"op": "pose", "layer": 0, "frame": 1, "angle": 90}})
+        layer = self.call("/api/state")["doc"]["layers"][0]
+        self.assertEqual((layer["on"], layer["shown"][0], layer["at"][1]["angle"], layer["at"][1]["pivot"]), (None, None, 90, [1.5, 3.5]))
+        turned = np.array(Image.open(io.BytesIO(base64.b64decode(layer["shown"][1]))).convert("RGBA"))
+        self.assertTrue((turned[3:8, 1, 0] == 255).all() and int((turned[..., 3] > 0).sum()) == 5)   # the bar points down now
+        seen = Image.open(io.BytesIO(studio.call("/api/look?frame=1&scale=1", url=self.url, raw=True))).convert("RGBA")
+        self.assertEqual(seen.getpixel((1, 7)), (255, 0, 0, 255))                                     # and that is what an agent sees
+        old = json.loads((self.folder / "s.pixelcat").read_text())
+        for entry in old["layers"]:                                 # a file from before layers had ids still opens
+            entry.pop("id"), entry.pop("joint")
+        self.assertEqual(Project.from_json(old).layers[0]["id"], "L1")
 
     def test_a_preview_shows_what_would_change_and_changes_nothing(self):
         self.call("/api/op", {"op": {"op": "draw", "color": "#ff0000", "rect": [0, 0, 8, 8]}})

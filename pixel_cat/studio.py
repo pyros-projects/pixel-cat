@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import frames, jobs
+from . import frames, jobs, joints
 from .project import SUFFIX, Project, png_bytes
 
 STATE = Path(os.environ.get("PIXEL_CAT_STATE", Path.home() / ".cache" / "pixel-cat")) / "studio.json"
@@ -145,7 +145,27 @@ class Studio:
             return {"meta": {"name": self.path.name, "path": str(self.path), "agent": self.agent, "listening": self.listening(),
                              "rev": self.rev, "undo": len(self.undo), "redo": len(self.redo),
                              "last": self.undo[-1][1:] if self.undo else None},
-                    "doc": self.project.to_json(), "chat": self.chat[-200:]}
+                    "doc": self.document(), "chat": self.chat[-200:]}
+
+    def document(self):
+        """The project for the page. A jointed layer also says how it appears on every frame: `shown` holds
+        its turned cels (null where the drawing shows as it is), `at` its pose, `on` the layer it hangs on."""
+        project = self.project
+        doc, count = project.to_json(), len(project.frames)
+        for index, (layer, out) in enumerate(zip(project.layers, doc["layers"])):
+            if not layer.get("joint"):
+                continue
+            memo, out["on"], out["shown"], out["at"] = {}, joints.parent_of(project.layers, index), [], []
+            for frame in range(count):
+                pose, turn = joints.world(project.layers, index, frame, count, memo)
+                angle, x, y = joints.local(layer["joint"], frame, count)
+                pivot = pose @ [layer["joint"]["pivot"][0], layer["joint"]["pivot"][1], 1]
+                cel, picture = layer["cels"][frame], project.shown(index, frame)
+                out["shown"].append(None if picture is None or picture is cel else base64.b64encode(png_bytes(picture)).decode())
+                out["at"].append({"angle": round(angle, 3), "x": round(x, 3), "y": round(y, 3), "turn": round(turn, 3),
+                                  "pivot": [round(float(pivot[0]), 3), round(float(pivot[1]), 3)],
+                                  "matrix": [round(float(v), 6) for v in (pose[0, 0], pose[1, 0], pose[0, 1], pose[1, 1], pose[0, 2], pose[1, 2])]})
+        return doc
 
     def say(self, who, text, **extra):
         message = {"from": who, "text": str(text)[:8000], "at": time.time(), **extra}

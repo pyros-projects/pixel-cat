@@ -7,7 +7,8 @@ const TOOLS = [
   ["pencil", "✎", "B", "Pencil"], ["eraser", "◻", "E", "Eraser"], ["fill", "◆", "G", "Fill"], ["picker", "◉", "I", "Pick a colour"],
   ["line", "╱", "L", "Line"], ["rect", "▭", "R", "Rectangle (Shift fills it)"], ["select", "⬚", "M", "Select a box"],
   ["lasso", "◌", "Q", "Lasso: draw around an area"], ["polygon", "⬠", "W", "Polygon: click the corners, Enter closes"],
-  ["move", "✥", "V", "Move the selection or the whole cel"], ["hand", "✋", "H", "Pan (or hold Space)"]];
+  ["move", "✥", "V", "Move the selection or the whole cel"], ["pose", "↻", "J", "Pose: turn and move a layer around its joint"],
+  ["hand", "✋", "H", "Pan (or hold Space)"]];
 const S = { doc: null, meta: {}, cels: [], frame: 0, layer: 0, tool: "pencil", colour: "#f2a65a", size: 1, mirror: false,
   zoom: 8, panX: 0, panY: 0, sel: null, float: null, clip: null, playing: false, timer: 0, pending: 0, drawing: false,
   known: 0, preview: null, hover: null, space: false, fitted: false };
@@ -37,11 +38,12 @@ async function load(flash) {
   const state = await api("/api/state");
   S.doc = state.doc; S.meta = state.meta; S.known = Math.max(S.known, state.meta.rev);
   S.cels = await Promise.all(state.doc.layers.map(layer => Promise.all(layer.cels.map(c => c ? decode(c) : null))));
+  S.shown = await Promise.all(state.doc.layers.map(layer => layer.shown ? Promise.all(layer.shown.map(c => c ? decode(c) : null)) : null));
   S.frame = Math.min(S.frame, S.doc.frames.length - 1); S.layer = Math.min(S.layer, S.doc.layers.length - 1);
   view.width = S.doc.width; view.height = S.doc.height;
   if (!S.fitted) { fit(); S.fitted = true; }
   if (!S.chatShown) { state.chat.forEach(showMessage); S.chatShown = true; }
-  chrome(); timeline(); draw();
+  chrome(); timeline(); jointForm(); draw();
   if (flash) { stage.classList.remove("flash"); void stage.offsetWidth; stage.classList.add("flash"); }
 }
 async function op(operation) {             // a change to the structure: send it, then take the result over
@@ -57,7 +59,7 @@ async function commit() {                  // the current cel changed under the 
     const everywhere = $("spread").checked && S.doc.frames.length > 1;
     const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: "all" } } : {}) } });
     S.known = Math.max(S.known, done.rev); S.meta.undo = (S.meta.undo || 0) + 1; S.meta.redo = 0; S.meta.last = [done.note, "you"]; chrome();
-    if (everywhere || S.doc.locked) await load();           // other frames changed, or the palette moved the colours
+    if (everywhere || S.doc.locked || S.doc.layers[layer].joint) await load();   // other frames changed, the palette moved the colours, or a pose has to be drawn again
   } catch (error) { fail(error); await load(); } finally { S.pending--; }
 }
 function whenIdle(run) { S.drawing || S.pending ? setTimeout(() => whenIdle(run), 120) : run(); }
@@ -67,16 +69,63 @@ function cel(create) {
   if (!S.cels[S.layer][S.frame] && create) S.cels[S.layer][S.frame] = blank();
   return S.cels[S.layer][S.frame];
 }
+const DRAWS = ["pencil", "eraser", "fill", "line", "rect", "select", "lasso", "polygon", "move"];
+function atRest(i) { return i === S.layer && !!S.doc.layers[i].joint && DRAWS.includes(S.tool); }   // drawing a jointed layer: it shows at rest
 function paintFrame(ctx, frame, alpha) {
+  const live = S.posing && frame === S.frame && alpha === 1 ? carried(S.posing.layer) : null;   // being turned right now, with all that hangs on it
   S.doc.layers.forEach((layer, i) => {
     if (!layer.visible) return;
     ctx.globalAlpha = alpha * layer.opacity;
     const tried = S.proposal && S.proposal.after && !S.proposal.before && i === S.proposal.layer && alpha === 1 ? S.proposal.after[frame] : null;
-    if (tried) ctx.drawImage(tried, 0, 0); else if (S.cels[i][frame]) ctx.drawImage(S.cels[i][frame], 0, 0);
+    if (tried) ctx.drawImage(tried, 0, 0);
+    else if (live && live.includes(i) && S.cels[i][frame]) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...liveMatrix(i)); ctx.drawImage(S.cels[i][frame], 0, 0); ctx.restore(); }
+    else { const posed = S.shown[i] && !atRest(i) ? S.shown[i][frame] : null; if (posed || S.cels[i][frame]) ctx.drawImage(posed || S.cels[i][frame], 0, 0); }
     if (S.float && i === S.layer && frame === S.frame && alpha === 1) ctx.drawImage(S.float.canvas, S.float.x, S.float.y);
   });
   ctx.globalAlpha = 1;
 }
+// ---------------------------------------------------------------- joints: a layer turns around a pivot and can hang on another
+function carried(i) { return S.doc.layers.map((_, n) => n).filter(n => { for (let at = n, steps = 0; at != null && steps < 40; at = S.doc.layers[at].on, steps++) if (at === i) return true; return false; }); }
+function turnMatrix([px, py], angle, x, y) { const c = Math.cos(angle * Math.PI / 180), s = Math.sin(angle * Math.PI / 180); return [c, s, -s, c, px + x - c * px + s * py, py + y - s * px - c * py]; }
+function times(m, n) { return [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]]; }
+function liveMatrix(i) {                     // where a layer stands while one of its joints is being turned by hand
+  const layer = S.doc.layers[i], own = S.posing && S.posing.layer === i ? S.posing : layer.at[S.frame];
+  const local = turnMatrix(layer.joint.pivot, own.angle, own.x, own.y);
+  return layer.on == null ? local : times(S.posing && carried(S.posing.layer).includes(layer.on) ? liveMatrix(layer.on) : S.doc.layers[layer.on].at[S.frame].matrix, local);
+}
+function pivotNow(i) { const layer = S.doc.layers[i]; if (!S.posing || !carried(S.posing.layer).includes(i)) return layer.at[S.frame].pivot; const m = liveMatrix(i), [x, y] = layer.joint.pivot; return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]; }
+function jointForm() {
+  $("restNote").hidden = !(S.doc && atRest(S.layer) && S.doc.layers[S.layer].at[S.frame].matrix.some((v, n) => Math.abs(v - [1, 0, 0, 1, 0, 0][n]) > 1e-6));
+  if ($("jointPanel").hidden || !S.doc) return;
+  const layer = S.doc.layers[S.layer], joint = layer.joint;
+  $("jointNone").hidden = !!joint; $("jointSome").hidden = !joint;
+  if (!joint) { $("jointNone").textContent = `Layer "${layer.name}" has no joint yet. Click on the picture where it turns: the elbow, the hip, the hinge.`; return; }
+  const at = layer.at[S.frame], key = joint.keys[S.frame], parent = $("jointParent"), below = carried(S.layer);
+  parent.replaceChildren(new Option("nothing", ""));
+  S.doc.layers.forEach((other, n) => { if (other.joint && !below.includes(n)) parent.append(new Option(other.name, n)); });
+  parent.value = layer.on == null ? "" : layer.on;
+  if (document.activeElement !== $("jointAngle")) $("jointAngle").value = Math.round(at.angle * 10) / 10;
+  if (document.activeElement !== $("jointX")) $("jointX").value = Math.round(at.x * 10) / 10;
+  if (document.activeElement !== $("jointY")) $("jointY").value = Math.round(at.y * 10) / 10;
+  $("jointEase").value = key ? key.ease : "smooth"; $("jointEase").disabled = !key;
+  $("jointKey").textContent = key ? `Frame ${S.frame + 1} is a key.` : joint.keys.some(Boolean) ? `Frame ${S.frame + 1} lies between keys.` : "No keys yet: the layer rests on every frame.";
+  $("jointSet").disabled = !!key; $("jointUnset").disabled = !key;
+  const lag = joint.drag ? joint.drag.amount : 0; $("jointDrag").value = [0, 0.3, 0.6, 1].reduce((a, b) => Math.abs(b - lag) < Math.abs(a - lag) ? b : a); $("jointDrag").disabled = layer.on == null;
+  $("jointWrap").checked = joint.wrap; $("jointPivot").classList.toggle("on", !!S.pivoting);
+}
+function pose(change) { return op({ op: "pose", layer: S.layer, frame: S.frame, ...change }); }
+function joint(change) { return op({ op: "joint", layer: S.layer, ...change }); }
+$("jointClose").onclick = () => panel("jointPanel", false);
+$("jointParent").onchange = () => joint({ parent: $("jointParent").value === "" ? null : +$("jointParent").value });
+for (const [id, name] of [["jointAngle", "angle"], ["jointX", "x"], ["jointY", "y"]]) $(id).onchange = () => { const value = +$(id).value; $(id).blur(); if (Number.isFinite(value)) pose({ [name]: value }); };
+$("jointEase").onchange = () => pose({ ease: $("jointEase").value });
+$("jointSet").onclick = () => pose({});
+$("jointUnset").onclick = () => pose({ remove: true });
+$("jointDrag").onchange = () => joint({ drag: +$("jointDrag").value ? { frames: 2, amount: +$("jointDrag").value } : null });
+$("jointWrap").onchange = () => joint({ wrap: $("jointWrap").checked });
+$("jointPivot").onclick = () => { S.pivoting = !S.pivoting; jointForm(); if (S.pivoting) toast("Click the new pivot on the picture"); };
+$("jointBake").onclick = () => op({ op: "bake", layer: S.layer });
+$("jointRemove").onclick = () => joint({ remove: true });
 function draw() {
   if (!S.doc) return;
   const ctx = view.getContext("2d"); ctx.imageSmoothingEnabled = false;
@@ -128,6 +177,18 @@ function overlay() {
     ctx.strokeStyle = "#5ec4c8"; ctx.lineWidth = 1.5; ctx.beginPath(); outline.forEach(([x, y], i) => i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)));
     if (S.poly && S.hoverAt) ctx.lineTo(X(S.hoverAt[0]), Y(S.hoverAt[1])); ctx.stroke();
     if (S.poly) { ctx.fillStyle = "#5ec4c8"; for (const [x, y] of S.poly) ctx.fillRect(X(x) - 2, Y(y) - 2, 4, 4); }
+  }
+  if (S.tool === "pose") {                  // the pivots, and a line from each to the one it hangs on
+    S.doc.layers.forEach((layer, i) => {
+      if (!layer.joint || !layer.visible) return;
+      const [px, py] = pivotNow(i), mine = i === S.layer;
+      if (layer.on != null) { const [qx, qy] = pivotNow(layer.on); ctx.strokeStyle = mine ? "#5ec4c8" : "rgba(94,196,200,0.45)"; ctx.lineWidth = mine ? 2 : 1; ctx.beginPath(); ctx.moveTo(X(px), Y(py)); ctx.lineTo(X(qx), Y(qy)); ctx.stroke(); }
+      ctx.lineWidth = 2; ctx.strokeStyle = "#0b0c10"; ctx.fillStyle = mine ? "#f2a65a" : "#5ec4c8";
+      ctx.beginPath(); ctx.arc(X(px), Y(py), mine ? 6 : 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+      if (mine) { ctx.beginPath(); ctx.moveTo(X(px) - 10, Y(py)); ctx.lineTo(X(px) + 10, Y(py)); ctx.moveTo(X(px), Y(py) - 10); ctx.lineTo(X(px), Y(py) + 10); ctx.stroke(); }
+      if (mine && S.posing) { const text = `${Math.round(S.posing.angle * 10) / 10}°` + (S.posing.x || S.posing.y ? `  ${S.posing.x}, ${S.posing.y}` : ""); ctx.font = "12px ui-monospace, Menlo, monospace"; ctx.lineWidth = 3; ctx.strokeText(text, X(px) + 12, Y(py) - 10); ctx.fillStyle = "#fff"; ctx.fillText(text, X(px) + 12, Y(py) - 10); }
+    });
+    ctx.lineWidth = 1;
   }
   if (!$("loopPanel").hidden) {             // what is painted to move, each kind in its colour, the one in hand stronger
     const w = S.doc.width;
@@ -280,7 +341,7 @@ let drag = null;
 stage.addEventListener("pointerdown", event => {
   if (!S.doc || event.button === 2) return;
   stage.setPointerCapture(event.pointerId); stopPlaying();
-  const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey ? "picker" : S.tool;
+  const [x, y] = cellAt(event), tool = S.space || event.button === 1 ? "hand" : event.altKey && S.tool !== "pose" ? "picker" : S.tool;
   drag = { tool, x, y, lastX: x, lastY: y, startX: event.clientX, startY: event.clientY, panX: S.panX, panY: S.panY, shift: event.shiftKey };
   if (tool === "hand") { S.panned = S.moved = true; return; }
   if (S.paint && ["pencil", "eraser", "fill"].includes(tool)) {
@@ -289,6 +350,17 @@ stage.addEventListener("pointerdown", event => {
     loopRows(); overlay(); return;
   }
   if (tool === "picker") { pick(x, y); return; }
+  if (tool === "pose") {
+    const layer = S.doc.layers[S.layer], at = pointAt(event);
+    if (!usable()) { drag = null; return; }
+    if (!layer.joint || S.pivoting) {        // the first click gives the layer its joint; later, "move pivot" asks for a new place
+      const pivot = [Math.round(at[0] * 2) / 2, Math.round(at[1] * 2) / 2]; drag = null;
+      joint(layer.joint ? { pivot } : { pivot, frame: S.frame, spread: true }); S.pivoting = false; return;
+    }
+    const now = layer.at[S.frame];
+    drag.pose = { from: at, base: now, move: event.altKey, turn: layer.on == null ? 0 : S.doc.layers[layer.on].at[S.frame].turn };
+    S.posing = { layer: S.layer, angle: now.angle, x: now.x, y: now.y }; draw(); return;
+  }
   if (tool === "select") { drop(); S.sel = null; draw(); return; }
   if (tool === "lasso") { drop(); S.sel = null; drag.path = [pointAt(event)]; draw(); return; }
   if (tool === "polygon") {
@@ -310,6 +382,17 @@ stage.addEventListener("pointermove", event => {
   $("where").textContent = S.hover ? `${x}, ${y}` + (S.sel ? `   selection ${S.sel.w} × ${S.sel.h}` : "") : "";
   S.hoverAt = pointAt(event);
   if (!drag) { overlay(); return; }
+  if (drag.pose) {
+    const at = pointAt(event), { from, base, move, turn } = drag.pose;
+    if (move) {                              // moved by whole cells, measured in the parent's own directions
+      const dx = Math.round(at[0] - from[0]), dy = Math.round(at[1] - from[1]), c = Math.cos(-turn * Math.PI / 180), s = Math.sin(-turn * Math.PI / 180);
+      S.posing.x = Math.round((base.x + c * dx - s * dy) * 100) / 100; S.posing.y = Math.round((base.y + s * dx + c * dy) * 100) / 100;
+    } else {
+      const [px, py] = base.pivot; let by = (Math.atan2(at[1] - py, at[0] - px) - Math.atan2(from[1] - py, from[0] - px)) * 180 / Math.PI;
+      by = ((by + 540) % 360) - 180; const step = event.shiftKey ? 15 : 1; S.posing.angle = Math.round((base.angle + by) / step) * step;
+    }
+    drag.pose.changed = S.posing.angle !== base.angle || S.posing.x !== base.x || S.posing.y !== base.y; draw(); return;
+  }
   if (drag.path) { drag.path.push(pointAt(event)); overlay(); return; }
   if (drag.region) { paintRegion(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.tool === "pencil"); drag.lastX = x; drag.lastY = y; overlay(); return; }
   if (drag.tool === "hand") { S.panX = drag.panX + event.clientX - drag.startX; S.panY = drag.panY + event.clientY - drag.startY; draw(); return; }
@@ -325,7 +408,12 @@ stage.addEventListener("pointermove", event => {
 });
 stage.addEventListener("pointerup", event => {
   if (!drag) return;
-  const tool = drag.tool, path = drag.path, region = drag.region; drag = null;
+  const tool = drag.tool, path = drag.path, region = drag.region, posed = drag.pose; drag = null;
+  if (posed) {                               // the pose stays on screen until the exact picture is back
+    const done = () => { S.posing = null; draw(); };
+    if (posed.changed) pose({ angle: S.posing.angle, x: S.posing.x, y: S.posing.y }).then(done, done); else done();
+    return;
+  }
   if (region) { loopRows(); return; }
   if (path) { S.sel = shapeFrom(path); draw(); context(); reportView(); return; }
   if (S.preview) { put(S.preview, false); S.preview = null; }
@@ -344,7 +432,10 @@ stage.addEventListener("contextmenu", event => event.preventDefault());
 
 // ---------------------------------------------------------------- the panels
 function setColour(value) { S.colour = value.toLowerCase(); $("colour").value = S.colour; $("hex").textContent = S.colour; palette(); context(); }
-function setTool(name) { if (name !== "move") drop(); S.poly = null; S.tool = name; S.preview = null; tools(); overlay(); stage.style.cursor = name === "hand" ? "grab" : name === "move" ? "move" : "crosshair"; }
+function setTool(name) {
+  if (name !== "move") drop(); S.poly = null; S.pivoting = false; S.tool = name; S.preview = null; tools();
+  if (name === "pose") panel("jointPanel", true); else if (!$("jointPanel").hidden) panel("jointPanel", false);
+  jointForm(); draw(); stage.style.cursor = name === "hand" ? "grab" : name === "move" ? "move" : "crosshair"; }
 function tools() {
   const nav = $("tools"); nav.replaceChildren();
   for (const [name, glyph, key, title] of TOOLS) {
@@ -385,7 +476,9 @@ function layers() {
     };
     const opacity = document.createElement("input"); opacity.type = "range"; opacity.min = 0; opacity.max = 100; opacity.value = Math.round(layer.opacity * 100); opacity.title = "Opacity";
     opacity.onclick = event => event.stopPropagation(); opacity.onchange = () => op({ op: "set-layer", layer: i, opacity: opacity.value / 100 });
-    row.append(eye, lock, title, opacity); row.onclick = () => go(S.frame, i); list.append(row);
+    const named = document.createElement("span"); named.className = "named"; named.append(title);
+    if (layer.joint) { const hangs = document.createElement("span"); hangs.className = "hangs"; hangs.textContent = layer.on == null ? "↻ joint" : "↻ hangs on " + S.doc.layers[layer.on].name; named.append(hangs); }
+    row.append(eye, lock, named, opacity); row.onclick = () => go(S.frame, i); list.append(row);
   });
 }
 function chrome() {
@@ -427,8 +520,8 @@ function timeline() {
     const row = document.createElement("div"); row.className = "row" + (i === S.layer ? " on" : ""); row.textContent = layer.name; row.onclick = () => go(S.frame, i); sheet.append(row);
     S.doc.frames.forEach((_, f) => {
       const button = document.createElement("button"), source = S.cels[i][f];
-      button.className = "cel" + (source ? "" : " empty") + (f === S.frame ? " column" : "") + (f === S.frame && i === S.layer ? " on" : "");
-      button.dataset.layer = i; button.dataset.frame = f; button.title = `${layer.name}, frame ${f + 1}`;
+      button.className = "cel" + (source ? "" : " empty") + (f === S.frame ? " column" : "") + (f === S.frame && i === S.layer ? " on" : "") + (layer.joint && layer.joint.keys[f] ? " key" : "");
+      button.dataset.layer = i; button.dataset.frame = f; button.title = `${layer.name}, frame ${f + 1}` + (layer.joint && layer.joint.keys[f] ? ", a key" : "");
       if (source) { const c = document.createElement("canvas"); c.width = c.height = 30; thumb(c, source); button.append(c); }
       button.onclick = () => go(f, i); sheet.append(button);
     });
@@ -448,7 +541,7 @@ function go(frame, layer, quiet) {
   document.querySelector(`.cel[data-layer="${S.layer}"][data-frame="${S.frame}"]`)?.classList.add("on");
   document.querySelector(`.head[data-frame="${S.frame}"]`)?.classList.add("on");
   if (!quiet) { chrome(); timelineRows(); reportView(); }
-  draw();
+  jointForm(); draw();
 }
 function timelineRows() { const rows = [...document.querySelectorAll(".sheet .row")]; rows.forEach((row, n) => row.classList.toggle("on", S.doc.layers.length - 1 - n === S.layer)); }
 function stopPlaying() { if (!S.playing) return; S.playing = false; clearTimeout(S.timer); $("play").innerHTML = "&#9654;"; chrome(); draw(); }

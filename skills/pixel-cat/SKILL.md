@@ -59,9 +59,12 @@ with a nonzero exit.
   background, tight crop, a rim. More finishing steps are in the recipe guide
   under `edits`.
 - A still can become a loop (`--loop clouds,water`, or the `loop` key of a
-  recipe). The guessed areas are rough. Look at the converted picture, then
+  recipe; `fireflies`, `leaves` and `birds` add small things of their own).
+  The guessed areas are rough. Look at the converted picture, then
   give each region its `area` as a box or a polygon in fractions of the
   picture, the way `<home>/examples/recipes/lake-loop.json` does.
+- The word `clipboard` in place of the input file takes the picture the user
+  has just copied.
 - A recipe can live next to the user's files. Paths inside it resolve against
   the recipe's own folder.
 - Check an animation before you hand it over: `pixel-cat check /abs/out.gif`
@@ -93,7 +96,10 @@ it while they watch, open the studio. Its chat is wired to this session.
    the picture.
 4. Change the project with `pixel-cat op '<json>'`, one operation at a time
    (`draw`, `add-layer`, `add-frame`, `edits`, ...; the list and the settings
-   are in `<home>/docs/studio.md`). The user sees each change as it happens
+   are in `<home>/docs/studio.md`). For a figure that moves, put each part on
+   a layer, give the layers joints (`joint`: a pivot, and the layer it hangs
+   on) and pose a few frames (`pose`); the frames between follow, and a hand
+   comes along with its forearm. The user sees each change as it happens
    and can take all of them back with one Undo. Prefer a new layer for
    anything they might not want. Look again when you are done.
 5. Answer in the chat, not in the terminal: `pixel-cat say "..."`. Keep it

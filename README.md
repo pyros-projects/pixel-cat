@@ -97,7 +97,7 @@ uv run pixel-cat convert examples/images/bob.gif -o output/bob.gif --scale 3
 uv run pixel-cat studio sprite.pixelcat --open
 ```
 
-The studio is a page on your own machine for drawing and animating. The timeline shows every layer in every frame, so one click picks both. Drop a picture on the canvas and it comes in converted. With `--agent`, the chat is wired to the agent that started it: it sees the frame, the layer and the selection you have open, draws into the same project while you watch, and one Undo takes its changes back. Projects are plain `.pixelcat` files that `convert` reads and writes too. [Studio guide](docs/studio.md)
+The studio is a page on your own machine for drawing and animating. The timeline shows every layer in every frame, so one click picks both. Drop a picture on the canvas and it comes in converted. With `--agent`, the chat is wired to the agent that started it: it sees the frame, the layer and the selection you have open, draws into the same project while you watch, and one Undo takes its changes back. Layers can have joints: a hand hangs on a forearm and follows it, you pose a few frames and the rest follows. Projects are plain `.pixelcat` files that `convert` reads and writes too. [Studio guide](docs/studio.md)
 
 ## Use from an agent
 
