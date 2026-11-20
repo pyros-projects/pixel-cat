@@ -10,7 +10,8 @@ import numpy as np
 from . import recommend, stills
 from .options import integer, keys
 
-CLEAN = {"gentle": (2, 0.70, 0.07), "balanced": (3, 0.60, 0.12), "strong": (5, 0.55, 0.20)}
+# largest speck in cells, share of its border one colour has to hold, how far apart the two colours may be
+CLEAN = {"gentle": (2, 0.70, 0.07), "balanced": (3, 0.60, 0.12), "strong": (5, 0.55, 0.20), "melt": (12, 0.40, 9.0)}
 
 
 def rgb(value, name="color"):
@@ -146,10 +147,11 @@ def replace(images, step):
 
 def clean(images, step):
     """Remove specks: small enclosed groups of cells join the colour around them when the two look alike.
-    `strength` is gentle (one or two cells), balanced or strong (up to five cells, looser match)."""
+    `strength` is gentle (one or two cells), balanced or strong (up to five cells, looser match). `melt` takes
+    flecks of up to twelve cells whatever their colour; it is meant for an area you point at."""
     keys(step, {"op", "strength"}, "clean")
     if step.get("strength", "balanced") not in CLEAN:
-        raise ValueError("strength is gentle, balanced or strong")
+        raise ValueError("strength is gentle, balanced, strong or melt")
     size, share, distance = CLEAN[step.get("strength", "balanced")]
 
     def alike(here, there):
@@ -320,7 +322,7 @@ def apply(images, steps):
         if not isinstance(step, dict) or step.get("op") not in OPS:
             raise ValueError(f"Edit {number}: op is one of {', '.join(OPS)}")
         try:
-            limited = step["op"] in LIMITED
+            limited = step["op"] in LIMITED or (step["op"] == "outline" and (step.get("inside") or step.get("grow") is False))
             where = {k: step[k] for k in ("rect", "points", "cells", "protect") if k in step} if limited else {}
             steady = limited and bool(step.get("steady")) and len(images) > 1
             if where or steady:

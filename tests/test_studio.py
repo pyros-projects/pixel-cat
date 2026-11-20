@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -442,6 +443,19 @@ class Studios(unittest.TestCase):
         for entry in old["layers"]:                                 # a file from before layers had ids still opens
             entry.pop("id"), entry.pop("joint")
         self.assertEqual(Project.from_json(old).layers[0]["id"], "L1")
+
+    def test_a_picture_can_come_in_with_this_projects_colours(self):
+        self.call("/api/op", {"op": {"op": "palette", "colors": ["#000000", "#ffffff", "#ff0000"]}})
+        y, x = np.mgrid[0:32, 0:32]
+        picture = io.BytesIO()
+        Image.fromarray(np.stack([x * 8, y * 8, 255 - x * 8], axis=2).astype(np.uint8)).save(picture, "PNG")
+        settings = json.dumps({"convert": {"mode": "grid", "grid": 8, "colors": 16}, "palette": "project"})
+        request = urllib.request.Request(self.url + "/api/import?name=in.png&how=layer&settings=" + urllib.parse.quote(settings), data=picture.getvalue(), method="POST")
+        done = json.loads(urllib.request.urlopen(request).read())
+        image = Project.load(self.folder / "s.pixelcat").composite(0)
+        found = {"#%02x%02x%02x" % tuple(c) for c in image[..., :3].reshape(-1, 3)}
+        self.assertTrue(found <= {"#000000", "#ffffff", "#ff0000"} and len(found) > 1)
+        self.assertEqual(done["summary"]["colors"], len(found))
 
     def test_a_project_file_comes_in_with_its_layers(self):
         other = Project(8, 8)

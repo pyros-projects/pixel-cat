@@ -75,7 +75,7 @@ Finishing steps on the converted art, applied in order to every frame.
 | `flip` | mirrors | `axis`: `x` or `y` |
 | `shift` | moves the picture by whole cells and wraps around, for checking how a tile repeats | `x`, `y` |
 | `replace` | turns one color or a list of colors into another | `from`, `to`, `tolerance` |
-| `clean` | removes specks: small enclosed groups of cells join the color around them when the two look alike | `strength`: `gentle`, `balanced` or `strong` |
+| `clean` | removes specks: small enclosed groups of cells join the color around them when the two look alike | `strength`: `gentle`, `balanced` or `strong`; `melt` takes flecks of up to twelve cells whatever their color and is meant for an area |
 | `thin` | thins drawn lines to one cell and closes small breaks. Lines are dark cells, or cells near `color`. Broad dark areas and small shapes such as an eye stay as they are. | `color`, `tolerance` (0 to 180, default 28), `width`: the thickest line in cells (2 to 8, default 4), `gap`: close breaks of up to 1, 2 or 3 cells (default 0) |
 | `halo` | removes the thin rim of in-between color that smooth scaling leaves beside dark lines. Run it before `thin`. | `strength`: `gentle` or `stronger` |
 | `fringe` | removes loose bits at the edge of a cut-out drawing: small groups of one color with mostly empty cells around them | `max`: the largest group in cells (default 4), `contact`: the share of empty surroundings from which a group goes (default 0.5) |

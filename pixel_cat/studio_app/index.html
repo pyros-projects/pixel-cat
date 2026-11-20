@@ -42,7 +42,7 @@
   <div id="proposal" class="proposal" hidden><span id="proposalText"></span><button id="proposalFlip" hidden>show before</button><button id="proposalApply" class="primary">Apply</button><button id="proposalCancel">Cancel</button></div>
   <div id="cleanup" class="findings" hidden>
     <h3>Clean up <button id="cleanupClose" class="quiet" title="Close">&times;</button></h3>
-    <label>What <select id="tidyStep"><option value="thin">Thin lines to one cell</option><option value="halo">Remove halos beside lines</option><option value="fringe">Remove loose bits at the edge</option><option value="clean">Remove specks</option></select></label>
+    <label>What <select id="tidyStep"><option value="thin">Thin lines to one cell</option><option value="halo">Remove halos beside lines</option><option value="fringe">Remove loose bits at the edge</option><option value="clean">Remove specks</option><option value="smooth">Smooth the silhouette</option><option value="smooth-lines">Smooth lines</option><option value="edge">Colour the edge of the drawing</option></select></label>
     <div id="tidyThin"><label>Lines are <select id="tidyInk"><option value="dark">dark cells</option><option value="colour">cells of the current colour</option></select></label>
       <label>Thickest line <select id="tidyWidth"><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select> cells</label>
       <label>Close breaks <select id="tidyGap"><option value="0">no</option><option value="1" selected>up to 1 cell</option><option value="2">up to 2 cells</option><option value="3">up to 3 cells</option></select></label></div>
@@ -74,7 +74,9 @@
       <p id="jointKey"></p>
       <div class="pair"><button id="jointSet">Set key</button><button id="jointUnset">Remove key</button></div>
       <label>Lags behind its parent <select id="jointDrag"><option value="0">no</option><option value="0.3">a little</option><option value="0.6">more</option><option value="1">a lot</option></select></label>
+      <label>Sways on its own <span><select id="jointSway"><option value="0">no</option><option value="4">a little</option><option value="8">more</option><option value="16">a lot</option></select> <select id="jointCycles" title="Swings per loop"><option>1</option><option>2</option><option>3</option><option>4</option></select> &times;</span></label>
       <label class="check"><input type="checkbox" id="jointWrap"> the motion closes into a loop</label>
+      <label>Cover the joint <span><select id="jointRadius" title="Radius of the disc in cells"><option>2</option><option>3</option><option selected>4</option><option>6</option><option>8</option></select> <button id="jointCover" title="A disc in the current colour at the pivot, on a new layer below: it hides the gap that opens when the part turns">Add</button></span></label>
       <div class="pair"><button id="jointPivot" title="Then click the new pivot on the picture">Set pivot</button><button id="jointBake" title="Turn the motion into plain frames; the joint goes">Bake</button><button id="jointRemove" title="Remove the joint; the drawing stays at rest">Remove</button></div>
       <p>Drag on the picture to turn the layer (Shift: steps of 15°), Alt+drag to move it. Each change sets a key on this frame.</p>
     </div>
@@ -91,7 +93,8 @@
       <button id="addColour" class="quiet" title="Add this colour to the palette">+ palette</button>
       <button id="fromArt" class="quiet" title="Take the palette from the art">from art</button>
       <button id="lock" class="quiet">lock</button>
-      <select id="named" title="Take a ready-made palette"><option value="">ready-made …</option></select></div>
+      <select id="named" title="Take a ready-made palette"><option value="">ready-made …</option></select>
+      <button id="editPalette" class="quiet" title="Edit the palette colour by colour, or paste a list">edit</button></div>
     <div id="palette" class="palette"></div>
   </section>
   <section class="layers">
@@ -109,37 +112,55 @@
 
 <footer>
   <div class="transport">
-    <button id="first" title="First frame">&#9198;</button><button id="prev" title="Previous frame (Left)">&#9664;</button>
+    <button id="prev" title="Previous frame (Left; Home goes to the first)">&#9664;</button>
     <button id="play" title="Play (Space)" class="primary">&#9654;</button>
-    <button id="next" title="Next frame (Right)">&#9654;</button><button id="lastFrame" title="Last frame">&#9197;</button>
-    <label class="check"><input type="checkbox" id="onion"> onion skin</label>
+    <button id="next" title="Next frame (Right; End goes to the last)">&#9654;</button>
+    <label title="Onion skin. Faint: the neighbouring frames shine through. Changes: cells that differ from the frame before are tinted red, from the frame after cyan.">onion <select id="onion"><option value="">off</option><option value="faint">faint</option><option value="changes">changes</option></select></label>
     <label class="check"><input type="checkbox" id="grid" checked> grid</label>
     <label class="check" title="A stroke also changes the other frames, wherever they showed the same as this frame did before the stroke. What moves is left alone."><input type="checkbox" id="spread"> draw on all</label>
     <span class="gap"></span>
     <label>frame <b id="frameNo"></b> lasts <input id="duration" type="number" min="10" max="60000" step="10"> ms</label>
-    <button id="durationAll" class="quiet" title="Give every frame this duration">all</button>
+    <button id="durationAll" class="quiet" title="Give every frame this duration, or the selected ones (Shift+click a frame number to select a range)">all</button>
     <span class="gap"></span>
-    <button id="addFrame" title="New empty frame after this one">+ frame</button><button id="copyFrame" title="Duplicate this frame">duplicate</button>
+    <button id="addFrame" title="New empty frame after this one">+ frame</button><button id="copyFrame" title="Duplicate this frame, or the selected frames">copy</button><button id="extendFrames" title="Add frames that repeat the last one">extend</button>
     <button id="leftFrame" title="Move frame left">&larr;</button><button id="rightFrame" title="Move frame right">&rarr;</button><button id="delFrame" title="Delete frame">&times;</button>
     <span class="gap"></span>
-    <button id="hold" title="Hold the selection: make the selected area stand still. Its cells are copied from this frame into the others.">hold</button>
+    <div class="menu up"><button id="hold" title="Make the selected area stand still, or let only it move">hold</button>
+      <div class="drop" id="holdMenu" hidden>
+        <button data-hold="still" title="The selected cells are copied from this frame into the others">The selection stands still</button>
+        <button data-hold="moves" title="Everything but the selection is copied from this frame into the others">Only the selection moves</button>
+      </div>
+    </div>
   </div>
+  <div class="scrubRow"><input type="range" id="scrub" min="0" max="0" value="0" title="Drag through the frames"></div>
   <div id="timeline" class="timeline"></div>
 </footer>
 
+<dialog id="paletteDialog">
+  <form method="dialog">
+    <h3>Palette</h3>
+    <div id="swatches" class="swatches"></div>
+    <p class="quiet">Click a colour to change it; the small × removes it. Or write the colours as a list of #RRGGBB:</p>
+    <textarea id="paletteText" rows="3" spellcheck="false"></textarea>
+    <menu><button type="button" id="paletteAdd">+ colour</button><button type="button" id="paletteSort">Dark to light</button><span class="gap"></span><button value="cancel">Cancel</button><button id="paletteGo" value="go" class="primary">Use it</button></menu>
+  </form>
+</dialog>
 <dialog id="importDialog">
   <form method="dialog">
     <h3>Bring in a picture, GIF or video</h3>
     <p id="importName" class="quiet"></p>
     <label>Put it <select id="importHow"><option value="layer">on a new layer</option><option value="frames">after the last frame</option><option value="project">in place of this project</option></select></label>
+    <div id="importConvert">
     <label>Convert <select id="importMode"><option value="fit">to fit this canvas</option><option value="recommended">as pixel-cat recommends</option><option value="native">not at all (it is pixel art already)</option></select></label>
     <label>Colours <input id="importColours" type="number" min="2" max="256" value="24"></label>
     <label>Cells get <select id="importSampling"><option value="crisp">their dominant colour</option><option value="ink">their dominant colour, outlines kept</option><option value="area">the average of their area</option><option value="exact">the pixel under their centre</option></select></label>
+    <label id="importPaletteRow">Colours come from <select id="importPalette"><option value="own">the picture</option><option value="project">this project's palette</option></select></label>
     <label class="check"><input type="checkbox" id="importCutout"> make the background transparent</label>
+    </div>
     <menu><button value="cancel">Cancel</button><button id="importGo" value="go" class="primary">Bring in</button></menu>
   </form>
 </dialog>
-<input type="file" id="file" accept="image/*,video/*" hidden>
+<input type="file" id="file" accept="image/*,video/*,.pixelcat" hidden>
 <div id="toast" class="toast" hidden></div>
 <script src="app.js"></script>
 </body>

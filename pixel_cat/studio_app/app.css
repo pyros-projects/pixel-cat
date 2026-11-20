@@ -6,7 +6,7 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
-body { display: grid; grid-template: 44px minmax(0, 1fr) 210px / 52px minmax(0, 1fr) 316px; overflow: hidden; }
+body { display: grid; grid-template: 44px minmax(0, 1fr) 210px / 90px minmax(0, 1fr) 316px; overflow: hidden; }
 button, select, input, textarea { font: inherit; color: inherit; }
 button { background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { border-color: var(--quiet); }
@@ -33,11 +33,11 @@ header { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; pad
 .drop button { text-align: left; }
 .drop label { color: var(--quiet); padding: 0 2px 4px; }
 
-#tools { grid-area: 2 / 1; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; overflow: auto; }
+#tools { grid-area: 2 / 1; background: var(--panel); border-right: 1px solid var(--line); display: grid; grid-template-columns: 36px 36px; justify-content: center; align-content: start; gap: 4px; padding: 8px 0; overflow: auto; }
 #tools button { width: 36px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 15px; position: relative; }
 #tools button.on { background: var(--ember); border-color: var(--ember); color: #1a1208; }
 #tools button small { position: absolute; right: 2px; bottom: 0; font-size: 8px; opacity: 0.65; }
-#tools hr { width: 28px; border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+#tools hr { grid-column: 1 / -1; width: 72px; border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 
 #stage { grid-area: 2 / 2; position: relative; overflow: hidden; background:
   radial-gradient(circle at 50% 40%, #1d212c, var(--ground) 70%); cursor: crosshair; touch-action: none; }
@@ -84,7 +84,7 @@ aside section { padding: 10px 12px; border-bottom: 1px solid var(--line); min-he
 #composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 #composer textarea { resize: none; }
 
-footer { grid-area: 3 / 1 / 4 / 3; background: var(--panel); border-top: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+footer { grid-area: 3 / 1 / 4 / 3; background: var(--panel); border-top: 1px solid var(--line); display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; }
 .transport { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--quiet); white-space: nowrap; }
 .transport b { color: var(--text); }
 .transport input[type=number] { width: 68px; }
@@ -152,3 +152,20 @@ button.quiet.active { color: var(--ember); border-color: var(--ember-deep); }
 #jointPanel .pair button { flex: 1; }
 .layer .named { min-width: 0; display: flex; flex-direction: column; }
 .layer .hangs { color: var(--cyan); font-size: 10.5px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu.up .drop { top: auto; bottom: 34px; right: auto; left: 0; }
+.scrubRow { padding: 3px 10px 0; }
+#scrub { width: 100%; height: 12px; margin: 0; accent-color: var(--ember); }
+#scrub[hidden] { display: none; }
+.head.picked { background: #2a3350; color: var(--text); box-shadow: inset 0 -2px 0 var(--cyan); }
+.head[draggable=true] { cursor: grab; }
+.head.target { box-shadow: inset 2px 0 0 var(--ember); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow: auto; margin-bottom: 8px; }
+.swatches span { position: relative; }
+.swatches input[type=color] { width: 30px; height: 30px; padding: 0; border: 1px solid #0008; border-radius: 4px; background: none; cursor: pointer; }
+.swatches button { position: absolute; right: -5px; top: -6px; width: 15px; height: 15px; padding: 0; border-radius: 50%; font-size: 10px; line-height: 1; background: var(--panel); }
+#paletteDialog textarea { width: 100%; font: 12px ui-monospace, Menlo, monospace; }
+#paletteDialog menu .gap { flex: 1; }
+#jointPanel label span { display: flex; align-items: center; gap: 4px; }
+#importConvert { display: grid; gap: 10px; }
+#importConvert[hidden] { display: none; }
+#jointPanel { max-height: calc(100% - 24px); }

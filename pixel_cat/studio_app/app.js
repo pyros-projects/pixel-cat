@@ -7,12 +7,14 @@ const TOOLS = [
   ["pencil", "✎", "B", "Pencil"], ["eraser", "◻", "E", "Eraser"], ["fill", "◆", "G", "Fill"], ["picker", "◉", "I", "Pick a colour"],
   ["line", "╱", "L", "Line"], ["rect", "▭", "R", "Rectangle (Shift fills it)"], ["select", "⬚", "M", "Select a box"],
   ["lasso", "◌", "Q", "Lasso: draw around an area"], ["polygon", "⬠", "W", "Polygon: click the corners, Enter closes"],
+  ["melt", "≋", "N", "Melt brush: small flecks join the shape around them"], ["edge", "◎", "O", "Edge: click an area to give it a rim in the current colour"],
+  ["swap", "⇄", "C", "Swap brush: the colour you start on becomes the current colour"],
   ["move", "✥", "V", "Move the selection or the whole cel"], ["pose", "↻", "J", "Pose: turn and move a layer around its joint"],
   ["hand", "✋", "H", "Pan (or hold Space)"]];
 const S = { doc: null, meta: {}, cels: [], frame: 0, layer: 0, tool: "pencil", colour: "#f2a65a", size: 1, mirror: false,
   zoom: 8, panX: 0, panY: 0, sel: null, float: null, clip: null, playing: false, timer: 0, pending: 0, drawing: false,
   known: 0, preview: null, hover: null, space: false, fitted: false };
-const SIZES = [1, 2, 3, 4, 6, 8, 12, 16];
+const SIZES = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 const view = $("view"), over = $("over"), stage = $("stage");
 
 // ---------------------------------------------------------------- talking to the server
@@ -69,7 +71,7 @@ function cel(create) {
   if (!S.cels[S.layer][S.frame] && create) S.cels[S.layer][S.frame] = blank();
   return S.cels[S.layer][S.frame];
 }
-const DRAWS = ["pencil", "eraser", "fill", "line", "rect", "select", "lasso", "polygon", "move"];
+const DRAWS = ["pencil", "eraser", "fill", "line", "rect", "select", "lasso", "polygon", "move", "melt", "edge", "swap"];
 function atRest(i) { return i === S.layer && !!S.doc.layers[i].joint && DRAWS.includes(S.tool); }   // drawing a jointed layer: it shows at rest
 function paintFrame(ctx, frame, alpha) {
   const live = S.posing && frame === S.frame && alpha === 1 ? carried(S.posing.layer) : null;   // being turned right now, with all that hangs on it
@@ -112,6 +114,7 @@ function jointForm() {
   $("jointSet").disabled = !!key; $("jointUnset").disabled = !key;
   const lag = joint.drag ? joint.drag.amount : 0; $("jointDrag").value = [0, 0.3, 0.6, 1].reduce((a, b) => Math.abs(b - lag) < Math.abs(a - lag) ? b : a); $("jointDrag").disabled = layer.on == null;
   $("jointWrap").checked = joint.wrap; $("jointPivot").classList.toggle("on", !!S.pivoting);
+  const swing = joint.sway ? joint.sway.amount : 0; $("jointSway").value = [0, 4, 8, 16].reduce((a, b) => Math.abs(b - swing) < Math.abs(a - swing) ? b : a); $("jointCycles").value = joint.sway ? Math.min(4, joint.sway.cycles) : 1;
 }
 function pose(change) { return op({ op: "pose", layer: S.layer, frame: S.frame, ...change }); }
 function joint(change) { return op({ op: "joint", layer: S.layer, ...change }); }
@@ -123,6 +126,8 @@ $("jointSet").onclick = () => pose({});
 $("jointUnset").onclick = () => pose({ remove: true });
 $("jointDrag").onchange = () => joint({ drag: +$("jointDrag").value ? { frames: 2, amount: +$("jointDrag").value } : null });
 $("jointWrap").onchange = () => joint({ wrap: $("jointWrap").checked });
+$("jointSway").onchange = $("jointCycles").onchange = () => joint({ sway: +$("jointSway").value ? { amount: +$("jointSway").value, cycles: +$("jointCycles").value } : null });
+$("jointCover").onclick = async event => { event.preventDefault(); const at = S.layer; if (await joint({ cover: { radius: +$("jointRadius").value, color: S.colour } })) go(S.frame, at + 1); };   // the new layer sits below; stay on the part
 $("jointPivot").onclick = () => { S.pivoting = !S.pivoting; jointForm(); if (S.pivoting) toast("Click the new pivot on the picture"); };
 $("jointBake").onclick = () => op({ op: "bake", layer: S.layer });
 $("jointRemove").onclick = () => joint({ remove: true });
@@ -130,11 +135,19 @@ function draw() {
   if (!S.doc) return;
   const ctx = view.getContext("2d"); ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, view.width, view.height);
-  if ($("onion").checked && !S.playing) {
+  const onion = S.playing ? "" : $("onion").value;
+  if (onion === "faint") {
     if (S.frame > 0) paintFrame(ctx, S.frame - 1, 0.3);
     if (S.frame < S.doc.frames.length - 1) paintFrame(ctx, S.frame + 1, 0.16);
   }
   paintFrame(ctx, S.frame, 1);
+  S.changes = null;
+  if (onion === "changes" && S.doc.frames.length > 1) {      // which cells differ from the frame before, and from the frame after
+    const w = S.doc.width, h = S.doc.height, now = ctx.getImageData(0, 0, w, h).data;
+    const other = frame => { const c = blank(); paintFrame(c.getContext("2d"), frame, 1); return c.getContext("2d").getImageData(0, 0, w, h).data; };
+    const differs = d => { const out = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) { const k = i * 4; out[i] = d[k] !== now[k] || d[k + 1] !== now[k + 1] || d[k + 2] !== now[k + 2] || d[k + 3] !== now[k + 3] ? 1 : 0; } return out; };
+    S.changes = { before: S.frame > 0 ? differs(other(S.frame - 1)) : null, after: S.frame < S.doc.frames.length - 1 ? differs(other(S.frame + 1)) : null };
+  }
   view.style.width = S.doc.width * S.zoom + "px"; view.style.height = S.doc.height * S.zoom + "px";
   view.style.left = S.panX + "px"; view.style.top = S.panY + "px";
   $("hint").hidden = S.cels.some(row => row.some(Boolean)) || !!S.float;
@@ -178,6 +191,14 @@ function overlay() {
     if (S.poly && S.hoverAt) ctx.lineTo(X(S.hoverAt[0]), Y(S.hoverAt[1])); ctx.stroke();
     if (S.poly) { ctx.fillStyle = "#5ec4c8"; for (const [x, y] of S.poly) ctx.fillRect(X(x) - 2, Y(y) - 2, 4, 4); }
   }
+  if (S.changes) {                          // onion skin as changes: red differs from the frame before, cyan from the frame after
+    const w = S.doc.width;
+    for (const [mask, colour, inset] of [[S.changes.before, "rgba(255,70,70,0.75)", 0], [S.changes.after, "rgba(60,220,255,0.75)", z > 5 ? Math.floor(z / 2) : 0]]) {
+      if (!mask) continue; ctx.fillStyle = colour; const size = z > 5 ? Math.ceil(z / 2) : z;
+      for (let i = 0; i < mask.length; i++) if (mask[i]) ctx.fillRect(X(i % w) + inset, Y(Math.floor(i / w)) + inset, size, size);
+    }
+  }
+  if (S.melting) { const w = S.doc.width; ctx.fillStyle = "rgba(94,196,200,0.4)"; for (const i of S.melting) ctx.fillRect(X(i % w), Y(Math.floor(i / w)), z, z); }
   if (S.tool === "pose") {                  // the pivots, and a line from each to the one it hangs on
     S.doc.layers.forEach((layer, i) => {
       if (!layer.joint || !layer.visible) return;
@@ -280,6 +301,26 @@ function boxCells(x0, y0, x1, y1, filled) {
   for (let y = t; y <= b; y++) for (let x = l; x <= r; x++) if (filled || x === l || x === r || y === t || y === b) out.push([x, y]);
   return out;
 }
+function swapCells(cells, from) {             // cells of the colour the stroke began on take the current colour
+  const c = cel(true), ctx = c.getContext("2d"), w = c.width, h = c.height; ctx.fillStyle = S.colour;
+  for (const [x, y] of cells) {
+    if (x < 0 || y < 0 || x >= w || y >= h || !inSel(x, y)) continue;
+    const p = ctx.getImageData(x, y, 1, 1).data;
+    if (p[0] === from[0] && p[1] === from[1] && p[2] === from[2] && p[3] === from[3]) ctx.fillRect(x, y, 1, 1);
+  }
+}
+function rim(x, y) {                         // the area under the click gets a rim, one cell wide, on its inside
+  const c = cel(true), ctx = c.getContext("2d"), w = c.width, h = c.height, d = ctx.getImageData(0, 0, w, h).data;
+  if (x < 0 || y < 0 || x >= w || y >= h) return;
+  const same = (px, py) => { if (px < 0 || py < 0 || px >= w || py >= h) return false; const i = (py * w + px) * 4, s = (y * w + x) * 4; return d[i] === d[s] && d[i + 1] === d[s + 1] && d[i + 2] === d[s + 2] && d[i + 3] === d[s + 3]; };
+  const seen = new Uint8Array(w * h), stack = [[x, y]], area = [];
+  while (stack.length) {
+    const [px, py] = stack.pop(); if (!same(px, py) || seen[py * w + px]) continue;
+    seen[py * w + px] = 1; area.push([px, py]); stack.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+  }
+  ctx.fillStyle = S.colour;
+  for (const [px, py] of area) if (inSel(px, py) && !(seen[py * w + px + 1] && px + 1 < w && seen[py * w + px - 1] && px > 0 && py + 1 < h && seen[(py + 1) * w + px] && py > 0 && seen[(py - 1) * w + px])) ctx.fillRect(px, py, 1, 1);
+}
 function flood(x, y) {
   const c = cel(true), ctx = c.getContext("2d"), w = c.width, h = c.height, image = ctx.getImageData(0, 0, w, h), d = image.data;
   if (x < 0 || y < 0 || x >= w || y >= h) return;
@@ -370,7 +411,10 @@ stage.addEventListener("pointerdown", event => {
   }
   if (!usable()) { drag = null; return; }
   if (tool === "move") { lift(); drag.fx = S.float.x; drag.fy = S.float.y; draw(); return; }
+  if (tool === "melt") { drop(); drag.melt = new Set(); for (const [px, py] of dots(x, y)) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py)) drag.melt.add(py * S.doc.width + px); S.melting = drag.melt; overlay(); return; }
   drop(); S.drawing = true;
+  if (tool === "swap") { const p = cel(true).getContext("2d").getImageData(Math.max(0, Math.min(S.doc.width - 1, x)), Math.max(0, Math.min(S.doc.height - 1, y)), 1, 1).data; drag.from = [p[0], p[1], p[2], p[3]]; swapCells(dots(x, y), drag.from); draw(); }
+  if (tool === "edge") { rim(x, y); draw(); }
   if (tool === "pencil" || tool === "eraser") { put(dots(x, y), tool === "eraser"); draw(); }
   if (tool === "fill") { flood(x, y); draw(); }
   if (tool === "line" || tool === "rect") { S.preview = [[x, y]]; overlay(); }
@@ -397,6 +441,11 @@ stage.addEventListener("pointermove", event => {
   if (drag.region) { paintRegion(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.tool === "pencil"); drag.lastX = x; drag.lastY = y; overlay(); return; }
   if (drag.tool === "hand") { S.panX = drag.panX + event.clientX - drag.startX; S.panY = drag.panY + event.clientY - drag.startY; draw(); return; }
   if (drag.tool === "picker") { pick(x, y); return; }
+  if (drag.melt) {
+    for (const [px, py] of between(drag.lastX, drag.lastY, x, y).flatMap(([bx, by]) => dots(bx, by))) if (px >= 0 && py >= 0 && px < S.doc.width && py < S.doc.height && inSel(px, py)) drag.melt.add(py * S.doc.width + px);
+    drag.lastX = x; drag.lastY = y; overlay(); return;
+  }
+  if (drag.tool === "swap" && drag.from) { swapCells(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.from); drag.lastX = x; drag.lastY = y; draw(); return; }
   if (drag.tool === "pencil" || drag.tool === "eraser") {
     put(between(drag.lastX, drag.lastY, x, y).flatMap(([px, py]) => dots(px, py)), drag.tool === "eraser"); drag.lastX = x; drag.lastY = y; draw();
   } else if (drag.tool === "line") { S.preview = between(drag.x, drag.y, x, y); overlay(); }
@@ -408,7 +457,12 @@ stage.addEventListener("pointermove", event => {
 });
 stage.addEventListener("pointerup", event => {
   if (!drag) return;
-  const tool = drag.tool, path = drag.path, region = drag.region, posed = drag.pose; drag = null;
+  const tool = drag.tool, path = drag.path, region = drag.region, posed = drag.pose, melted = drag.melt; drag = null;
+  if (melted) {                              // the flecks under the stroke join what surrounds them; the server does it
+    const w = S.doc.width, cells = [...melted].map(i => [i % w, Math.floor(i / w)]), frames = pickedFrames() || [S.frame], done = () => { S.melting = null; overlay(); };
+    if (cells.length) op({ op: "edits", layer: S.layer, frames: $("spread").checked ? "all" : frames, steps: [{ op: "clean", strength: "melt", cells, steady: true }] }).then(done, done); else done();
+    return;
+  }
   if (posed) {                               // the pose stays on screen until the exact picture is back
     const done = () => { S.posing = null; draw(); };
     if (posed.changed) pose({ angle: S.posing.angle, x: S.posing.x, y: S.posing.y }).then(done, done); else done();
@@ -487,6 +541,8 @@ function chrome() {
   $("undo").disabled = !S.meta.undo; $("redo").disabled = !S.meta.redo;
   $("last").innerHTML = ""; if (S.meta.last) { const who = document.createElement("b"); who.textContent = S.meta.last[1] === "agent" ? "agent" : "you"; $("last").append("last: ", who, " " + S.meta.last[0]); }
   $("frameNo").textContent = `${S.frame + 1} of ${S.doc.frames.length}`; $("duration").value = S.doc.frames[S.frame].duration;
+  if (S.range && S.range[0] > S.doc.frames.length - 1) S.range = null;
+  $("durationAll").textContent = pickedFrames() ? "selected" : "all"; $("scrub").max = S.doc.frames.length - 1; $("scrub").value = S.frame; $("scrub").hidden = S.doc.frames.length < 2;
   const agent = $("agent"); agent.className = "status" + (S.meta.agent ? (S.meta.listening ? " listening" : " busy") : "");
   agent.textContent = !S.meta.agent ? "not connected" : S.meta.listening ? "listening" : "working or away";
   layers(); palette(); context();
@@ -514,7 +570,13 @@ function timeline() {
   sheet.append(document.createElement("span"));
   S.doc.frames.forEach((frame, f) => {
     const head = document.createElement("div"); head.className = "head" + (f === S.frame ? " on" : ""); head.dataset.frame = f;
-    head.innerHTML = `${f + 1}<small>${frame.duration}</small>`; head.title = `Frame ${f + 1}, ${frame.duration} ms`; head.onclick = () => go(f, S.layer); sheet.append(head);
+    head.innerHTML = `${f + 1}<small>${frame.duration}</small>`; head.title = `Frame ${f + 1}, ${frame.duration} ms. Shift+click selects a range, drag moves it.`;
+    head.onclick = event => { if (event.shiftKey) { S.range = [Math.min(S.frame, f), Math.max(S.frame, f)]; rangeMarks(); chrome(); } else { S.range = null; rangeMarks(); go(f, S.layer); } };
+    head.draggable = true;
+    head.ondragstart = event => { event.dataTransfer.setData("text/plain", String(f)); event.dataTransfer.effectAllowed = "move"; };
+    head.ondragover = event => { event.preventDefault(); head.classList.add("target"); }; head.ondragleave = () => head.classList.remove("target");
+    head.ondrop = event => { event.preventDefault(); event.stopPropagation(); head.classList.remove("target"); moveFrames(+event.dataTransfer.getData("text/plain"), f); };
+    sheet.append(head);
   });
   S.doc.layers.map((layer, i) => [layer, i]).reverse().forEach(([layer, i]) => {
     const row = document.createElement("div"); row.className = "row" + (i === S.layer ? " on" : ""); row.textContent = layer.name; row.onclick = () => go(S.frame, i); sheet.append(row);
@@ -526,7 +588,15 @@ function timeline() {
       button.onclick = () => go(f, i); sheet.append(button);
     });
   });
-  $("timeline").replaceChildren(sheet);
+  $("timeline").replaceChildren(sheet); rangeMarks();
+}
+function pickedFrames() { if (!S.range) return null; const out = []; for (let f = S.range[0]; f <= Math.min(S.range[1], S.doc.frames.length - 1); f++) out.push(f); return out.length ? out : null; }
+function rangeMarks() { const picked = pickedFrames() || []; document.querySelectorAll(".sheet .head").forEach(head => head.classList.toggle("picked", picked.includes(+head.dataset.frame))); }
+async function moveFrames(from, onto) {       // a dragged frame, or the picked range it belongs to, lands where it is dropped
+  const picked = pickedFrames(), block = picked && picked.includes(from) ? picked : [from];
+  if (block.includes(onto)) return;
+  const before = block.filter(f => f < onto).length, to = onto - before + (onto > from ? 1 : 0);
+  if (await op({ op: "move-frame", frames: block, to })) { S.range = block.length > 1 ? [to, to + block.length - 1] : null; go(to + block.indexOf(from), S.layer); rangeMarks(); chrome(); }
 }
 function thumbs(layer, frame) {
   const button = document.querySelector(`.cel[data-layer="${layer}"][data-frame="${frame}"]`); if (!button) return;
@@ -579,18 +649,13 @@ async function proposeOp(text, operation) {   // ask the server what an operatio
 }
 $("proposalApply").onclick = async () => { const run = S.proposal.apply; endProposal(); await run(); };
 $("proposalCancel").onclick = endProposal;
-function proposeHold() {
-  drop();
-  if (!S.sel) return toast("Select the area that should stand still first (M)");
+function proposeHold(outside) {
+  if (!S.sel) return toast("Select an area first (M, Q or W)");
   if (S.doc.frames.length < 2) return toast("There is only one frame");
-  const cells = selectedCells(), w = S.doc.width, from = S.frame, layer = S.layer, source = pixels(S.cels[layer][from]);
-  const marks = S.doc.frames.map((_, f) => {
-    if (f === from) return [];
-    const other = pixels(S.cels[layer][f]);
-    return cells.filter(([x, y]) => { const i = (y * w + x) * 4; for (let k = 0; k < 4; k++) if ((source ? source[i + k] : 0) !== (other ? other[i + k] : 0)) return true; return false; });
-  });
-  const where = S.sel.mask ? { cells } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] };
-  propose(`Hold the selection as it is in frame ${from + 1}, in all ${S.doc.frames.length} frames.`, marks, () => op({ op: "hold", layer, from, ...where }));
+  const from = S.frame, picked = pickedFrames(), where = S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] };
+  const reach = picked ? `frames ${picked[0] + 1} to ${picked[picked.length - 1] + 1}` : `all ${S.doc.frames.length} frames`;
+  proposeOp(outside ? `Only the selection keeps moving: everything else is taken from frame ${from + 1}, in ${reach}.` : `Hold the selection as it is in frame ${from + 1}, in ${reach}.`,
+    { op: "hold", layer: S.layer, from, ...where, ...(outside ? { outside: true } : {}), ...(picked ? { frames: picked } : {}) });
 }
 
 // ---------------------------------------------------------------- the check: where to look
@@ -618,23 +683,34 @@ async function runCheck() {
 
 // ---------------------------------------------------------------- clean up, with a look at the result first
 function tidyForm() {
-  const step = $("tidyStep").value; $("tidyThin").hidden = step !== "thin"; $("tidyStrength").hidden = step === "thin";
+  const step = $("tidyStep").value; $("tidyThin").hidden = step !== "thin" && step !== "smooth-lines"; $("tidyStrength").hidden = step === "thin";
+  $("tidyGap").closest("label").hidden = step !== "thin";
   const how = $("tidyHow"); how.replaceChildren();
-  const choices = step === "halo" ? [["gentle", "gentle"], ["stronger", "stronger"]] : step === "fringe" ? [["2", "bits up to 2 cells"], ["4", "bits up to 4 cells"], ["8", "bits up to 8 cells"]] : [["gentle", "gentle"], ["balanced", "balanced"], ["strong", "strong"]];
+  const choices = step === "halo" ? [["gentle", "gentle"], ["stronger", "stronger"]] : step === "fringe" ? [["2", "bits up to 2 cells"], ["4", "bits up to 4 cells"], ["8", "bits up to 8 cells"]]
+    : step === "edge" ? [["1", "1 cell, current colour"], ["2", "2 cells, current colour"], ["3", "3 cells, current colour"]] : step.startsWith("smooth") ? [["1", "once"], ["2", "twice"], ["3", "three times"]]
+    : [["gentle", "gentle"], ["balanced", "balanced"], ["strong", "strong"]];
   for (const [value, label] of choices) { const o = document.createElement("option"); o.value = value; o.textContent = label; how.append(o); }
-  if (step !== "halo") how.selectedIndex = 1;
+  if (step === "fringe" || step === "clean") how.selectedIndex = 1;
+  const frames = $("tidyFrames"), was = frames.value, picked = pickedFrames();
+  frames.replaceChildren(new Option("this frame", "this"), ...(picked ? [new Option(`frames ${picked[0] + 1} to ${picked[picked.length - 1] + 1}`, "picked")] : []), new Option("all frames", "all"));
+  frames.value = [...frames.options].some(o => o.value === was) ? was : "this";
   $("tidyArea").hidden = !S.sel; $("tidyWhere").hidden = !!S.sel;
   $("tidyWhere").textContent = "On the whole layer. Select an area first to keep the step to it, or to protect it.";
 }
 $("tidy").onclick = () => { panel("cleanup", $("cleanup").hidden); tidyForm(); };
 $("cleanupClose").onclick = () => panel("cleanup", false); $("tidyStep").onchange = tidyForm;
 $("tidyGo").onclick = () => {
-  const kind = $("tidyStep").value, step = { op: kind };
+  const kind = $("tidyStep").value, step = { op: kind.startsWith("smooth") ? "smooth" : kind === "edge" ? "outline" : kind };
   if (kind === "thin") { step.width = +$("tidyWidth").value; step.gap = +$("tidyGap").value; if ($("tidyInk").value === "colour") step.color = S.colour; }
-  else if (kind === "fringe") step.max = +$("tidyHow").value; else step.strength = $("tidyHow").value;
+  else if (kind === "fringe") step.max = +$("tidyHow").value;
+  else if (kind === "edge") Object.assign(step, { inside: true, color: S.colour, width: +$("tidyHow").value });
+  else if (kind === "smooth") step.passes = +$("tidyHow").value;
+  else if (kind === "smooth-lines") { Object.assign(step, { what: "lines", passes: +$("tidyHow").value, width: +$("tidyWidth").value }); if ($("tidyInk").value === "colour") step.color = S.colour; }
+  else step.strength = $("tidyHow").value;
   if (S.sel) Object.assign(step, S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] }, $("tidyProtect").value === "outside" ? { protect: true } : {});
-  const all = $("tidyFrames").value === "all";
-  proposeOp(`${$("tidyStep").selectedOptions[0].textContent}, on ${all ? "all frames" : "frame " + (S.frame + 1)}.`, { op: "edits", layer: S.layer, frames: all ? "all" : [S.frame], steps: [step] });
+  const reach = $("tidyFrames").value, picked = pickedFrames(), frames = reach === "all" ? "all" : reach === "picked" && picked ? picked : [S.frame];
+  if (frames === "all" || frames.length > 1) step.steady = true;       // what stands still stays the same in every frame
+  proposeOp(`${$("tidyStep").selectedOptions[0].textContent}, on ${frames === "all" ? "all frames" : frames.length > 1 ? `frames ${frames[0] + 1} to ${frames[frames.length - 1] + 1}` : "frame " + (S.frame + 1)}.`, { op: "edits", layer: S.layer, frames, steps: [step] });
 };
 
 // ---------------------------------------------------------------- loops: paint what moves
@@ -730,22 +806,57 @@ $("lock").onclick = () => op({ op: "palette", lock: !S.doc.locked });
 api("/api/palettes").then(all => {            // the ready-made palettes, smallest first within their kind
   for (const [name, colours] of Object.entries(all)) { const o = document.createElement("option"); o.value = name; o.textContent = `${name} (${colours.length})`; $("named").append(o); }
 }).catch(() => {});
+let draft = [];
+function swatches() {
+  const box = $("swatches"); box.replaceChildren();
+  draft.forEach((colour, n) => {
+    const cell = document.createElement("span"), input = document.createElement("input"), gone = document.createElement("button");
+    input.type = "color"; input.value = colour; input.title = colour; input.oninput = () => { draft[n] = input.value; input.title = input.value; $("paletteText").value = draft.join(" "); };
+    gone.type = "button"; gone.textContent = "×"; gone.title = "Remove " + colour; gone.onclick = () => { draft.splice(n, 1); swatches(); };
+    cell.append(input, gone); box.append(cell);
+  });
+  if (!draft.length) box.textContent = "No colours yet.";
+  $("paletteText").value = draft.join(" ");
+}
+const brightness = colour => 0.299 * parseInt(colour.slice(1, 3), 16) + 0.587 * parseInt(colour.slice(3, 5), 16) + 0.114 * parseInt(colour.slice(5, 7), 16);
+$("editPalette").onclick = () => { draft = [...S.doc.palette]; swatches(); $("paletteDialog").showModal(); };
+$("paletteText").onchange = () => { draft = [...new Set(($("paletteText").value.match(/[0-9a-fA-F]{6}\b/g) || []).map(c => "#" + c.toLowerCase()))].slice(0, 256); swatches(); };
+$("paletteAdd").onclick = () => { if (!draft.includes(S.colour)) draft.push(S.colour); swatches(); };
+$("paletteSort").onclick = () => { draft.sort((a, b) => brightness(a) - brightness(b)); swatches(); };
+$("paletteDialog").addEventListener("close", () => { if ($("paletteDialog").returnValue === "go") op({ op: "palette", colors: draft }); });
 $("named").onchange = () => { const name = $("named").value; $("named").value = ""; if (name) op({ op: "palette", name }); };
 $("addLayer").onclick = async () => { const done = await op({ op: "add-layer", at: S.layer + 1 }); if (done) go(S.frame, S.layer + 1); };
 $("delLayer").onclick = () => op({ op: "remove-layer", layer: S.layer });
 $("mergeLayer").onclick = async () => { const done = await op({ op: "merge-down", layer: S.layer }); if (done) go(S.frame, S.layer - 1); };
 $("upLayer").onclick = async () => { if (S.layer < S.doc.layers.length - 1 && await op({ op: "move-layer", layer: S.layer, to: S.layer + 1 })) go(S.frame, S.layer + 1); };
 $("downLayer").onclick = async () => { if (S.layer > 0 && await op({ op: "move-layer", layer: S.layer, to: S.layer - 1 })) go(S.frame, S.layer - 1); };
-$("addFrame").onclick = async () => { if (await op({ op: "add-frame", at: S.frame + 1 })) go(S.frame + 1, S.layer); };
-$("copyFrame").onclick = async () => { if (await op({ op: "add-frame", at: S.frame + 1, copy: S.frame })) go(S.frame + 1, S.layer); };
-$("delFrame").onclick = () => op({ op: "remove-frame", frame: S.frame });
-$("leftFrame").onclick = async () => { if (S.frame > 0 && await op({ op: "move-frame", frame: S.frame, to: S.frame - 1 })) go(S.frame - 1, S.layer); };
-$("rightFrame").onclick = async () => { if (S.frame < S.doc.frames.length - 1 && await op({ op: "move-frame", frame: S.frame, to: S.frame + 1 })) go(S.frame + 1, S.layer); };
+$("addFrame").onclick = async () => { S.range = null; if (await op({ op: "add-frame", at: S.frame + 1 })) go(S.frame + 1, S.layer); };
+$("copyFrame").onclick = async () => {      // one frame, or the picked range, copied right behind itself
+  const picked = pickedFrames();
+  if (!picked) { if (await op({ op: "add-frame", at: S.frame + 1, copy: S.frame })) go(S.frame + 1, S.layer); return; }
+  const at = picked[picked.length - 1] + 1;
+  if (await op({ op: "add-frame", at, copy: picked })) { S.range = [at, at + picked.length - 1]; go(at, S.layer); rangeMarks(); chrome(); }
+};
+$("extendFrames").onclick = () => {
+  const more = parseInt(prompt("How many more frames? They repeat the last one.", "8"), 10);
+  if (more > 0) op({ op: "add-frame", copy: S.doc.frames.length - 1, count: more });
+};
+$("delFrame").onclick = async () => { const picked = pickedFrames(); S.range = null; await op(picked ? { op: "remove-frame", frames: picked } : { op: "remove-frame", frame: S.frame }); };
+async function nudgeFrames(by) {             // the frame in hand, or the picked range, one place to the left or right
+  const block = pickedFrames() || [S.frame], to = block[0] + by;
+  if (to < 0 || block[block.length - 1] + by > S.doc.frames.length - 1) return;
+  const at = block.indexOf(S.frame);
+  if (await op({ op: "move-frame", frames: block, to })) { if (S.range) S.range = [to, to + block.length - 1]; go(to + Math.max(0, at), S.layer); rangeMarks(); }
+}
+$("leftFrame").onclick = () => nudgeFrames(-1); $("rightFrame").onclick = () => nudgeFrames(1);
 $("duration").onchange = event => op({ op: "set-frame", frame: S.frame, duration: +event.target.value });
-$("durationAll").onclick = () => op({ op: "set-frame", frame: "all", duration: +$("duration").value });
-$("first").onclick = () => go(0, S.layer); $("lastFrame").onclick = () => go(S.doc.frames.length - 1, S.layer);
+$("durationAll").onclick = () => op(pickedFrames() ? { op: "set-frame", frames: pickedFrames(), duration: +$("duration").value } : { op: "set-frame", frame: "all", duration: +$("duration").value });
+$("scrub").oninput = () => go(+$("scrub").value, S.layer);
+
 $("prev").onclick = () => go((S.frame - 1 + S.doc.frames.length) % S.doc.frames.length, S.layer); $("next").onclick = () => go((S.frame + 1) % S.doc.frames.length, S.layer);
-$("play").onclick = play; $("onion").onchange = draw; $("grid").onchange = overlay; $("hold").onclick = proposeHold; $("check").onclick = runCheck;
+$("play").onclick = play; $("onion").onchange = draw; $("grid").onchange = overlay; $("hold").onclick = event => { event.stopPropagation(); $("holdMenu").hidden = !$("holdMenu").hidden; };
+$("holdMenu").onclick = event => { const how = event.target.dataset.hold; if (how) proposeHold(how === "moves"); };
+document.addEventListener("click", () => $("holdMenu").hidden = true); $("check").onclick = runCheck;
 $("size").onclick = () => {
   const answer = prompt("Canvas size in cells, width x height", `${S.doc.width}x${S.doc.height}`); if (!answer) return;
   const [w, h] = answer.toLowerCase().split("x").map(n => parseInt(n, 10)); if (w && h) op({ op: "resize", width: w, height: h }).then(() => { fit(); chrome(); draw(); });
@@ -759,18 +870,22 @@ $("exportMenu").onclick = event => {
 let incoming = null;
 function offer(file) {
   incoming = file; $("importName").textContent = file.name;
-  const empty = !S.cels.some(row => row.some(Boolean));
-  $("importHow").value = empty ? "project" : "layer"; $("importMode").value = empty ? "recommended" : "fit"; $("importDialog").showModal();
+  const empty = !S.cels.some(row => row.some(Boolean)), project = /\.pixelcat$/i.test(file.name);
+  $("importConvert").hidden = project; $("importPaletteRow").hidden = S.doc.palette.length < 2; $("importPalette").value = S.doc.locked ? "project" : "own";
+  $("importHow").options[0].textContent = project ? "on a new layer, flattened" : "on a new layer"; $("importHow").options[1].textContent = project ? "after the last frame, with its layers" : "after the last frame";
+  $("importHow").value = empty ? "project" : project ? "frames" : "layer"; $("importMode").value = empty ? "recommended" : "fit"; $("importDialog").showModal();
 }
 $("import").onclick = () => $("file").click();
 $("file").onchange = event => { if (event.target.files[0]) offer(event.target.files[0]); event.target.value = ""; };
 $("importDialog").addEventListener("close", async () => {
   if ($("importDialog").returnValue !== "go" || !incoming) return;
-  const mode = $("importMode").value, settings = {};
-  if (mode === "recommended") settings.convert = { mode: "recommended" };
+  const mode = $("importMode").value, settings = {}, project = /\.pixelcat$/i.test(incoming.name);
+  if (project) { /* a project is pixel art already: nothing to convert */ }
+  else if (mode === "recommended") settings.convert = { mode: "recommended" };
   else if (mode === "native") settings.convert = { mode: "grid", grid: "native", sampling: "exact", colors: 256 };
   else settings.convert = { mode: "grid", grid: Math.max(S.doc.width, S.doc.height), sampling: $("importSampling").value, colors: +$("importColours").value };
-  if ($("importCutout").checked) settings.edits = [{ op: "cutout" }];
+  if (!project && $("importCutout").checked) settings.edits = [{ op: "cutout" }];
+  if (!project && !$("importPaletteRow").hidden && $("importPalette").value === "project") settings.palette = "project";
   toast("Converting " + incoming.name + " …"); drop(); S.pending++;
   const how = $("importHow").value;
   try {
@@ -844,6 +959,8 @@ document.addEventListener("keydown", event => {
     if (S.sel && cel() && usable()) { cut(cel(), S.sel, true); draw(); return commit(); }
   }
   if (key === "arrowright") return go((S.frame + 1) % S.doc.frames.length, S.layer);
+  if (key === "home") return go(0, S.layer);
+  if (key === "end") return go(S.doc.frames.length - 1, S.layer);
   if (key === "arrowleft") return go((S.frame - 1 + S.doc.frames.length) % S.doc.frames.length, S.layer);
   if (key === "arrowup") return go(S.frame, S.layer + 1);
   if (key === "arrowdown") return go(S.frame, S.layer - 1);

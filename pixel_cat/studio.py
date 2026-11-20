@@ -196,6 +196,15 @@ class Studio:
                 if settings.get(key):
                     job[key] = settings[key]
             _, images, durations, _, summary = jobs.convert(job, folder)
+        if settings.get("palette") == "project" and len(self.project.palette) >= 2:      # the picture takes this project's colours
+            import numpy as np
+
+            from . import edits, stills
+            colours = np.array([edits.rgb(c) for c in self.project.palette], dtype=np.int64)
+            images = [image.copy() for image in images]
+            for image in images:
+                stills.apply_palette(image, colours, 1)
+            summary = dict(summary, colors=len(stills.histogram([(image, 1) for image in images])[0]))
         op = {"op": "place", "name": Path(name).stem[:40] or "Imported", "frames": [base64.b64encode(png_bytes(i)).decode() for i in images],
               "frame": 0 if how != "frames" else len(self.project.frames), "fit": how == "project"}
         if len(images) > 1 or how == "frames":

@@ -562,6 +562,19 @@ class Edits(Case):
         out = self.native(lined, {"op": "smooth", "what": "lines"})
         self.assertEqual(tuple(out[17, 30, :3]), (230, 200, 120))   # the bump took the field's colour
 
+    def test_a_melting_cleanup_takes_flecks_under_the_brush_only(self):
+        image = np.zeros((30, 40, 4), dtype=np.uint8)
+        image[...] = (60, 120, 200, 255)
+        image[5:8, 5:8] = (250, 240, 60, 255)                       # a fleck of nine cells, far from the blue
+        image[5:8, 25:28] = (250, 240, 60, 255)                     # and its twin
+        cells = [[x, y] for y in range(2, 12) for x in range(2, 12)]
+        out = self.native(image, {"op": "clean", "strength": "melt", "cells": cells})
+        self.assertEqual(tuple(out[6, 6, :3]), (60, 120, 200))      # melted where the brush went
+        self.assertEqual(tuple(out[6, 26, :3]), (250, 240, 60))     # untouched elsewhere
+        self.assertEqual(tuple(self.native(image, {"op": "clean", "strength": "strong"})[6, 6, :3]), (250, 240, 60))   # too big and too different for the ordinary step
+        inner = self.native(image, {"op": "outline", "inside": True, "color": "#101018", "rect": [0, 0, 20, 30]})
+        self.assertEqual((tuple(inner[0, 3, :3]), tuple(inner[0, 30, :3])), ((16, 16, 24), (60, 120, 200)))   # an inner outline can be kept to an area
+
     def test_an_outline_can_be_wider_or_sit_inside(self):
         image = np.zeros((20, 20, 4), dtype=np.uint8)
         image[6:14, 6:14] = (200, 60, 60, 255)
