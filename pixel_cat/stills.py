@@ -211,7 +211,26 @@ def median_cut(colours, counts, limit):
         boxes[at:at + 1] = [box[:cut], box[cut:]]
         scores[at:at + 1] = [score(box[:cut]), score(box[cut:])]
     palette = np.array([np.floor(counts[b] @ colours[b] / counts[b].sum() + 0.5) for b in boxes], dtype=np.int64)
-    return rescue(palette, colours, counts) if limit >= 4 else palette
+    return use_every_slot(rescue(palette, colours, counts) if limit >= 4 else palette, colours, counts)
+
+
+def use_every_slot(palette, colours, counts):
+    """Spend the whole colour budget. A palette entry can end up with no cell at all, because every colour of
+    its box sits closer to a neighbour's entry. Such an entry is given to the colour that is served worst."""
+    palette = palette.copy()
+    for _ in range(4):
+        owner = nearest(colours, palette)
+        idle = np.flatnonzero(np.bincount(owner, minlength=len(palette)) == 0)
+        if not len(idle):
+            break
+        cost = ((colours - palette[owner]) ** 2).sum(axis=1) * counts
+        for slot in idle:
+            worst = int(cost.argmax())
+            if cost[worst] <= 0:
+                break
+            palette[slot] = colours[worst]
+            cost[worst] = 0
+    return palette
 
 
 def rescue(palette, colours, counts, far=48, share=0.0015):

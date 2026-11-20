@@ -63,6 +63,12 @@ class Stills(Case):
             self.assertLessEqual(len(colours(self.out())), limit)
             self.assertEqual(result["colors"], len(colours(self.out())))
 
+    def test_the_whole_colour_budget_is_spent(self):
+        result = execute({"input": str(ROOT / "examples/images/potion.png"), "convert": {"mode": "grid", "grid": 128, "sampling": "crisp", "colors": 16},
+                          "export": [{"path": "out.png", "scale": 1}]}, self.folder)
+        self.assertEqual(result["colors"], 15)                      # fifteen colours and transparency make sixteen
+        self.assertEqual(len(colours(self.out())), 15)
+
     def test_a_custom_palette_is_the_only_source_of_colour(self):
         palette = ["#102030", "#f0e0d0", "#c04040", "#40a060"]
         self.run_job(input=self.save(self.painting()), convert={"mode": "grid", "grid": 48, "palette": palette})
