@@ -32,21 +32,6 @@
 
 ---
 
-<div align="center">
-
-![A painted lake at sunset and its pixel art on a 256-cell grid with 32 colors](media/convert-lake.png)
-
-| | | |
-| :---: | :---: | :---: |
-| ![A potion icon and its 128-cell sprite](media/convert-potion.png) | ![A cartoon rooftop and its 128-cell version with 8 colors](media/convert-rooftop.png) | ![A looping GIF converted frame by frame with one shared palette](media/bob.gif) |
-| `pixel-cat convert potion.png -o sprite.png` | `pixel-cat convert rooftop.png -o rooftop.png` | `pixel-cat convert bob.gif -o bob.gif --mode grid --grid 96 --sampling crisp --colors 16` |
-
-</div>
-
-Each picture above came out of one command with no settings chosen by hand, except the GIF. pixel-cat looks at the image first: flat cartoon art gets a small grid and keeps its outlines, a painting gets a larger grid and averaged cells, and enlarged pixel art gets its original grid back pixel for pixel.
-
-It is plain Python with numpy and Pillow, and it makes no network calls. A conversion takes a fraction of a second.
-
 ## Three 15-second films
 
 <div align="center">
@@ -58,7 +43,7 @@ It is plain Python with numpy and Pillow, and it makes no network calls. A conve
 
 </div>
 
-Play the MP4s to hear the diver's bell, the lever hitting its stop and the chrysalis cracking. ImageGen supplied the paintings. The film scripts convert them with pixel-cat, move the props and sprites on a 240 × 360 grid, and synthesize the stereo sound. FFmpeg encodes the 720 × 1080 MP4s. [Artwork prompts](examples/films/ART.md)
+Play the MP4s to hear the diver's bell, the lever hitting its stop and the chrysalis cracking. ImageGen supplied the paintings. The film scripts convert them with pixel-cat, move the props and sprites on a 240 × 360 grid, and synthesize the stereo sound. The camera moves between cells, so zooms and pans stay sharp without shimmering. FFmpeg encodes the 720 × 1080 MP4s. [Artwork prompts](examples/films/ART.md)
 
 ## A 30-second game intro
 
@@ -110,6 +95,19 @@ uv run pixel-cat run examples/recipes/bob.json
 A successful command prints one JSON object with the grid size, the number of colors, the frame timings and the files it wrote. In recommended mode it also reports the settings it chose, so an agent can repeat or adjust them. Errors go to stderr as JSON with a nonzero exit. A recipe is the same job as a JSON file; it can write several outputs at once and also works over stdin with `pixel-cat run -`. [Recipe reference](docs/recipes.md)
 
 ## Modes
+
+<div align="center">
+
+![A painted lake at sunset and its pixel art on a 256-cell grid with 32 colors](media/convert-lake.png)
+
+| | | |
+| :---: | :---: | :---: |
+| ![A potion icon and its 128-cell sprite](media/convert-potion.png) | ![A cartoon rooftop and its 128-cell version with 8 colors](media/convert-rooftop.png) | ![A looping GIF converted frame by frame with one shared palette](media/bob.gif) |
+| `pixel-cat convert potion.png -o sprite.png` | `pixel-cat convert rooftop.png -o rooftop.png` | `pixel-cat convert bob.gif -o bob.gif --mode grid --grid 96 --sampling crisp --colors 16` |
+
+</div>
+
+The stills above came out of one command each, with no settings chosen by hand. pixel-cat is plain Python with numpy and Pillow, and it makes no network calls. A conversion takes a fraction of a second.
 
 | Mode | What it does |
 | --- | --- |

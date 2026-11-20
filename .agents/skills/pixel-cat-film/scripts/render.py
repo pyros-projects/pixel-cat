@@ -11,6 +11,7 @@ import tempfile
 from collections import deque
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 from sound import soundtrack
 
@@ -283,18 +284,59 @@ def images(folder, shot, size, fps, seed):
             frame = paint_effect(frame, fx, time, points)
         if foreground:
             frame.paste(foreground[0], (0, 0), foreground[1])
-        if "camera" in shot:
-            cx, cy, zoom = sample(shot["camera"], time)
-            cw, ch = min(w, round(w / zoom)), min(h, round(h / zoom))
-            x = min(w - cw, max(0, round(cx - cw / 2)))
-            y = min(h - ch, max(0, round(cy - ch / 2)))
-            frame = frame.crop((x, y, x + cw, y + ch)).resize(size, NEAREST)
         yield frame
+
+
+def window(shot, time, size, smooth):
+    """The part of the drawing the camera shows: left, top, width, height in cells."""
+    w, h = size
+    if "camera" not in shot:
+        return 0, 0, w, h
+    cx, cy, zoom = sample(shot["camera"], time)
+    if not smooth:
+        cw, ch = min(w, round(w / zoom)), min(h, round(h / zoom))
+        return min(w - cw, max(0, round(cx - cw / 2))), min(h - ch, max(0, round(cy - ch / 2))), cw, ch
+    cw, ch = min(w, w / zoom), min(h, h / zoom)
+    return min(w - cw, max(0, cx - cw / 2)), min(h - ch, max(0, cy - ch / 2)), cw, ch
+
+
+def look(frame, view, scale, smooth):
+    """Show a window of the drawing at output size.
+
+    A smooth camera is not bound to the grid: it rests between cells and zooms by any factor. Each output
+    pixel shows the average of the patch it covers. Inside a cell that is the cell's own colour; only an
+    output pixel that straddles two cells blends them. Cells stay sharp and their edges do not crawl when
+    the camera moves. A grid camera snaps to whole cells, which makes zooms step and shimmer.
+    """
+    art = np.asarray(frame)
+    h, w = art.shape[:2]
+    x, y, cw, ch = view
+    if not smooth:
+        cols, rows = x + np.arange(w) * cw // w, y + np.arange(h) * ch // h
+        return np.repeat(np.repeat(art[rows][:, cols], scale, axis=0), scale, axis=1)
+    if (x, y, cw, ch) == (0, 0, w, h):
+        return np.repeat(np.repeat(art, scale, axis=0), scale, axis=1)
+
+    def taps(start, length, cells, pixels):
+        low = start + np.arange(pixels) * (length / pixels)
+        high = low + length / pixels
+        first = np.clip(np.floor(low).astype(int), 0, cells - 1)
+        second = np.clip(np.ceil(high).astype(int) - 1, 0, cells - 1)
+        return first, second, np.clip((first + 1 - low) / (high - low), 0, 1).astype(np.float32)
+
+    top, bottom, share = taps(y, ch, h, h * scale)
+    art = art[top] * share[:, None, None] + art[bottom] * (1 - share)[:, None, None]
+    left, right, share = taps(x, cw, w, w * scale)
+    art = art[:, left] * share[None, :, None] + art[:, right] * (1 - share)[None, :, None]
+    return np.rint(art).astype(np.uint8)
 
 
 def render(story, destination):
     s = json.loads(story.read_text())
     fps, scale, size = s["fps"], s["scale"], tuple(s["size"])
+    smooth = s.get("lens", "smooth") == "smooth"
+    if s.get("lens", "smooth") not in ("smooth", "grid"):
+        raise ValueError('lens is "smooth" or "grid"')
     duration = sum(shot["seconds"] for shot in s["shots"])
     if fps not in (6, 8, 12, 24) or any(
         abs(shot["seconds"] * fps - round(shot["seconds"] * fps)) > 1e-8
@@ -320,15 +362,13 @@ def render(story, destination):
             "-pix_fmt",
             "rgb24",
             "-s",
-            f"{size[0]}x{size[1]}",
+            f"{size[0] * scale}x{size[1] * scale}",
             "-framerate",
-            str(fps),
+            "24",
             "-i",
             "pipe:0",
             "-i",
             str(wav),
-            "-vf",
-            f"scale=iw*{scale}:ih*{scale}:flags=neighbor,fps=24",
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -353,9 +393,12 @@ def render(story, destination):
         ]
         with subprocess.Popen(command, stdin=subprocess.PIPE) as encoder:
             try:
+                # The drawing changes at the drawing rate. A smooth camera moves on every one of the 24 frames.
                 for i, shot in enumerate(s["shots"]):
-                    for frame in images(story.parent, shot, size, fps, s["seed"] + i):
-                        encoder.stdin.write(frame.tobytes())
+                    for index, frame in enumerate(images(story.parent, shot, size, fps, s["seed"] + i)):
+                        for step in range(24 // fps):
+                            time = (index + (step * fps / 24 if smooth else 0)) / fps
+                            encoder.stdin.write(look(frame, window(shot, time, size, smooth), scale, smooth).tobytes())
             finally:
                 encoder.stdin.close()
             if encoder.wait():
