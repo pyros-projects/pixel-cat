@@ -44,5 +44,67 @@ class Camera(unittest.TestCase):
         self.assertEqual({tuple(c) for c in out.reshape(-1, 3)}, {(200, 40, 40), (20, 60, 220)})
 
 
+class PaintedProps(unittest.TestCase):
+    """A prop that is lifted off its plate must leave nothing of itself behind."""
+
+    def setUp(self):
+        y, x = np.mgrid[0:60, 0:80]
+        plate = np.zeros((60, 80, 3), dtype=np.uint8)
+        plate[...] = (20, 40, 60)
+        plate[:, :30] = (120, 70, 40)                               # two grounds meet behind the prop
+        reach = np.hypot(x - 40, y - 30)
+        plate[reach < 12] = (255, 190, 80)                          # a bright rim ...
+        plate[reach < 10] = (200, 110, 30)                          # ... around the body
+        self.plate = Image.fromarray(plate)
+        self.wide = [[40 + round(13 * np.cos(a)), 30 + round(13 * np.sin(a))] for a in np.linspace(0, 2 * np.pi, 24, endpoint=False)]
+        self.tight = [[40 + round(10 * np.cos(a)), 30 + round(10 * np.sin(a))] for a in np.linspace(0, 2 * np.pi, 24, endpoint=False)]
+
+    def prop_colours_left(self, plate):
+        art = np.asarray(plate).astype(int)
+        return int(((art[..., 0] > 180) & (art[..., 1] > 90) & (art[..., 2] < 100)).sum())
+
+    def test_the_hole_gets_the_ground_behind_it_and_no_trace_of_the_prop(self):
+        plate = self.plate.copy()
+        prop, bounds = render.lift(plate, self.wide)
+        self.assertEqual(self.prop_colours_left(plate), 0)
+        art = np.asarray(plate)
+        self.assertEqual(tuple(int(v) for v in art[30, 28]), (120, 70, 40))    # each edge of the hole continues its own ground
+        self.assertEqual(tuple(int(v) for v in art[30, 52]), (20, 40, 60))
+        self.assertEqual(prop.size, (bounds[2] - bounds[0], bounds[3] - bounds[1]))
+
+    def test_an_outline_that_cuts_through_the_rim_snaps_to_the_edge(self):
+        from PIL import ImageDraw
+        mask = Image.new("L", (80, 60))
+        ImageDraw.Draw(mask).polygon([tuple(p) for p in self.tight], fill=255)
+        leaked, ring = render.outline_leak(np.asarray(self.plate), np.asarray(mask) > 0)
+        self.assertGreater(leaked.sum(), 0.5 * ring)                # nearly the whole ring is rim
+        plate = self.plate.copy()
+        render.lift(plate, self.tight)                              # snapped: the rim leaves with the prop
+        self.assertEqual(self.prop_colours_left(plate), 0)
+        with self.assertRaisesRegex(ValueError, "cuts through the prop"):
+            render.lift(self.plate.copy(), self.tight, snap=False)
+
+    def test_a_prop_starts_exactly_where_it_was_painted(self):
+        layer = {"cutout": self.wide, "pivot": [0.5, 0], "pose": [[0, 41, 17, 1, 1, 0, 1], [1, 41, 17, 1, 1, 12, 1]]}
+        plate = self.plate.copy()
+        cfg = render.painted_prop(plate, layer, "plate.png")
+        art, where = render.scale_layer((cfg.pop("_art"), cfg), 0)
+        plate.paste(art, where, art)
+        self.assertTrue((np.asarray(plate) == np.asarray(self.plate)).all())
+        off = dict(layer, pose=[[0, 40, 17, 1, 1, 0, 1], [1, 40, 17, 1, 1, 12, 1]])
+        with self.assertRaisesRegex(ValueError, "does not start where it was painted"):
+            render.painted_prop(self.plate.copy(), off, "plate.png")
+
+    def test_turning_keeps_a_thin_line_whole(self):
+        art = Image.new("RGBA", (41, 41))
+        for i in range(41):
+            art.putpixel((20, i), (255, 255, 255, 255))             # one cell wide
+        for degrees in (7, 20, 33):
+            turned = np.asarray(render.rotate_cells(art, degrees, (20, 20)))[..., 3] > 0
+            rows = turned.any(axis=1)
+            self.assertGreaterEqual(rows.sum(), 30)                 # no gaps along its length
+            self.assertLessEqual(turned.sum(axis=1).max(), 2)       # and it stays thin
+
+
 if __name__ == "__main__":
     unittest.main()

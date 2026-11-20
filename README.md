@@ -156,7 +156,7 @@ The first command guesses the sky and the water. The guess is rough, and here it
 
 ## Make a film
 
-Give an agent in this checkout a subject and name the skill. Try “Use `pixel-cat-film` to make a 15-second portrait film about a lighthouse keeper winding a clockwork sun. Give the winding key a sound I can recognize in the dark.” The skill shows how to plan four shots, move a subject between keyframes and export a README preview. [Agent skill](.agents/skills/pixel-cat-film/SKILL.md)
+Give an agent in this checkout a subject and name the skill. Try “Use `pixel-cat-film` to make a 15-second portrait film about a lighthouse keeper winding a clockwork sun. Give the winding key a sound I can recognize in the dark.” The skill shows how to plan four shots, move a subject between keyframes, review every moving part on enlarged sheets and export a README preview. [Agent skill](.agents/skills/pixel-cat-film/SKILL.md)
 
 With the [installed skill](#install-as-an-agent-skill), ask from any folder. The agent follows the same film skill in its pixel-cat checkout and writes the film to your folder.
 

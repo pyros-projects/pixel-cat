@@ -33,40 +33,122 @@ def sample(keys, time):
     return keys[-1][1:]
 
 
-def lift(plate, polygon):
-    """Lift a painted prop and extend nearby background colors into the hole."""
+def outline_leak(art, inside):
+    """Which cells just outside an outline still belong to the prop?
+
+    A cell of the ring around the outline has leaked when it looks like the prop right next to it and
+    unlike the ground two to four cells farther out. That happens when the outline was traced too tightly:
+    the prop's rim stays on the plate, and when the prop moves away a ghost of it remains. Both samples are
+    medians, so a twig that passes nearby does not count as the ground.
+    Returns a mask of the leaked cells and the size of the ring.
+    """
+    h, w = inside.shape
+    solid = Image.fromarray(inside.astype(np.uint8) * 255)
+    ring = (np.asarray(solid.filter(ImageFilter.MaxFilter(3))) > 0) & ~inside
+    beyond = (np.asarray(solid.filter(ImageFilter.MaxFilter(9))) > 0) & ~(np.asarray(solid.filter(ImageFilter.MaxFilter(3))) > 0)
+    colour = art.astype(np.float64)
+    leaked = np.zeros((h, w), dtype=bool)
+    for y, x in zip(*np.nonzero(ring)):
+        wide = np.s_[max(0, y - 4):y + 5, max(0, x - 4):x + 5]
+        near = np.s_[max(0, y - 2):y + 3, max(0, x - 2):x + 3]
+        prop, ground = colour[near][inside[near]], colour[wide][beyond[wide]]
+        if len(prop) and len(ground):
+            body, field = np.median(prop, axis=0), np.median(ground, axis=0)
+            like_prop, like_ground = np.abs(colour[y, x] - body).max(), np.abs(colour[y, x] - field).max()
+            leaked[y, x] = np.abs(body - field).max() > 60 and like_prop + 25 < like_ground
+    return leaked, int(ring.sum())
+
+
+def lift(plate, polygon, window=3, snap=True):
+    """Lift a painted prop off its plate and paint background into the hole.
+
+    Returns the prop and the box it came from. A hand-traced outline is rarely exact, so it first snaps
+    outwards to the prop's real edge: cells just outside it that still show the prop join it (see
+    outline_leak), twice at most. An outline that is still off after that was traced wrong, and that is an error,
+    because any part of the prop left on the plate stays behind as a ghost when the prop moves.
+
+    Then each cell of the hole looks at the nearest cell outside and draws one of the colours that are common
+    around it. A twig or a highlight that passes close by is a minority there and stays out; the area behind
+    the prop, lit or dark, comes in with its grain.
+    """
     mask = Image.new("L", plate.size)
     ImageDraw.Draw(mask).polygon([tuple(p) for p in polygon], fill=255)
-    bounds = mask.getbbox()
-    if not bounds:
+    if not mask.getbbox():
         raise ValueError("Cutout misses its plate")
+    hole = np.asarray(mask) > 0
+    art = np.asarray(plate).copy()
+    h, w = hole.shape
+    for round_ in range(3):
+        leaked, ring = outline_leak(art, hole)
+        if leaked.sum() <= max(4, 0.05 * ring):
+            break
+        if not snap or round_ == 2:
+            ys, xs = np.nonzero(leaked)
+            raise ValueError(
+                f"The cutout's outline cuts through the prop: {int(leaked.sum())} of the {ring} cells just outside it still "
+                f"show the prop (around x {xs.min()}-{xs.max()}, y {ys.min()}-{ys.max()}). Trace the outline again so that it "
+                "encloses the whole prop with its rim. Otherwise a ghost of the prop stays behind when it moves.")
+        hole |= leaked
+    mask = Image.fromarray(hole.astype(np.uint8) * 255)
+    bounds = mask.getbbox()
     actor = plate.crop(bounds).convert("RGBA")
     actor.putalpha(mask.crop(bounds))
-    x0, y0, x1, y1 = bounds
-    box = (
-        max(0, x0 - 2),
-        max(0, y0 - 2),
-        min(plate.width, x1 + 2),
-        min(plate.height, y1 + 2),
-    )
-    patch = plate.crop(box)
-    unknown = mask.crop(box)
-    flags, colors = unknown.load(), patch.load()
-    queue = deque(
-        (x, y)
-        for y in range(patch.height)
-        for x in range(patch.width)
-        if not flags[x, y]
-    )
+    # For every cell of the hole, find the nearest cell outside it: spread outside positions inwards.
+    origin = np.full((h, w, 2), -1, dtype=np.int32)
+    ys, xs = np.nonzero(~hole)
+    origin[ys, xs] = np.stack([ys, xs], axis=1)
+    queue = deque((int(y), int(x)) for y, x in zip(ys, xs)
+                  if hole[max(0, y - 1):y + 2, max(0, x - 1):x + 2].any())
     while queue:
-        x, y = queue.popleft()
-        for xx, yy in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-            if 0 <= xx < patch.width and 0 <= yy < patch.height and flags[xx, yy]:
-                flags[xx, yy] = 0
-                colors[xx, yy] = colors[x, y]
-                queue.append((xx, yy))
-    plate.paste(patch.filter(ImageFilter.MedianFilter(3)), box[:2], mask.crop(box))
-    return actor
+        y, x = queue.popleft()
+        for yy, xx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1), (y - 1, x - 1), (y - 1, x + 1), (y + 1, x - 1), (y + 1, x + 1)):
+            if 0 <= yy < h and 0 <= xx < w and origin[yy, xx, 0] < 0:
+                origin[yy, xx] = origin[y, x]
+                queue.append((yy, xx))
+    usual = {}
+
+    def common(y, x):
+        """The colours that each hold at least three tenths of the free cells around (y, x), and their shares."""
+        if (y, x) not in usual:
+            patch = art[max(0, y - window):y + window + 1, max(0, x - window):x + window + 1].reshape(-1, 3)
+            free = ~hole[max(0, y - window):y + window + 1, max(0, x - window):x + window + 1].reshape(-1)
+            colours, counts = np.unique(patch[free], axis=0, return_counts=True)
+            keep = counts >= min(counts.max(), counts.sum() * 0.3)   # when nothing holds that much: the most common one
+            usual[(y, x)] = colours[keep], np.cumsum(counts[keep] / counts[keep].sum())
+        return usual[(y, x)]
+
+    # The grain of the surroundings carries on: each cell draws one of the common colours, by their shares.
+    dice = random.Random(len(polygon) * 7919 + bounds[0])
+    filled = art.copy()
+    for y, x in zip(*np.nonzero(hole)):
+        colours, shares = common(int(origin[y, x, 0]), int(origin[y, x, 1]))
+        filled[y, x] = colours[min(len(colours) - 1, int(np.searchsorted(shares, dice.random())))]
+    # A cell that stands out from the middle tone of its neighbourhood is a stray: it takes that tone.
+    middle = np.asarray(Image.fromarray(filled).filter(ImageFilter.MedianFilter(7)))
+    stray = (np.abs(filled.astype(np.int16) - middle).max(axis=2) > 60) & hole
+    filled[stray] = middle[stray]
+    plate.paste(Image.fromarray(filled), (0, 0), mask)
+    return actor, bounds
+
+
+def rotate_cells(art, degrees, center):
+    """Rotate pixel art without chewing it up: enlarge four times, rotate, then give each cell the colour
+    that fills most of it. Thin lines and ridges keep their width instead of breaking into crumbs."""
+    k = 4
+    big = art.resize((art.width * k, art.height * k), NEAREST).rotate(
+        degrees, NEAREST, center=(center[0] * k + k / 2, center[1] * k + k / 2))
+    cells = np.asarray(big).reshape(art.height, k, art.width, k, 4).transpose(0, 2, 1, 3, 4).reshape(art.height, art.width, k * k, 4)
+    solid = cells[..., 3] >= 128
+    code = (cells[..., 0].astype(np.int64) << 16 | cells[..., 1].astype(np.int64) << 8 | cells[..., 2]) * solid - (~solid)
+    ordered = np.sort(code, axis=2)
+    runs = np.concatenate([np.ones(ordered.shape[:2] + (1,), dtype=bool), ordered[..., 1:] != ordered[..., :-1]], axis=2)
+    start = np.maximum.accumulate(np.where(runs, np.arange(k * k), 0), axis=2)
+    length = np.arange(k * k) - start + 1
+    winner = np.take_along_axis(ordered, length.argmax(axis=2)[..., None], axis=2)[..., 0]
+    out = np.zeros((art.height, art.width, 4), dtype=np.uint8)
+    seen = winner >= 0
+    out[seen] = np.stack([winner[seen] >> 16, winner[seen] >> 8 & 255, winner[seen] & 255, np.full(seen.sum(), 255)], axis=1)
+    return Image.fromarray(out)
 
 
 def scale_layer(layer, time):
@@ -104,7 +186,7 @@ def scale_layer(layer, time):
         art = bent
     if opacity < 1:
         art.putalpha(art.getchannel("A").point(lambda a: round(a * max(0, opacity))))
-    fx, fy = cfg.get("pivot", [0.5, 0.5])
+    fx, fy = cfg.get("_pivot", cfg.get("pivot", [0.5, 0.5]))
     pivot = (round(art.width * fx), round(art.height * fy))
     if abs(degrees) > 0.05:
         # A square around the pivot keeps corners intact during rotation.
@@ -116,7 +198,7 @@ def scale_layer(layer, time):
         )
         tile = Image.new("RGBA", (radius * 2 + 1, radius * 2 + 1))
         tile.paste(art, (radius - pivot[0], radius - pivot[1]))
-        art = tile.rotate(degrees, NEAREST, center=(radius, radius))
+        art = rotate_cells(tile, degrees, (radius, radius))
         pivot = (radius, radius)
     return art, (round(x - pivot[0]), round(y - pivot[1]))
 
@@ -245,6 +327,27 @@ def paint_effect(frame, fx, time, seeds):
     return frame
 
 
+def painted_prop(plate, cfg, name):
+    """Lift a layer's cutout and tie it to the place where it was painted.
+
+    The pivot is a fraction of the outline's own box, as the story gives it. The first pose has to put that
+    pivot exactly where it is in the painting; then the first frame equals the plate cell for cell. A prop
+    that starts a cell off jumps on the first frame and shows a rim of filled background, so that is an error.
+    """
+    xs, ys = [p[0] for p in cfg["cutout"]], [p[1] for p in cfg["cutout"]]
+    left, top, width, height = min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+    art, bounds = lift(plate, cfg["cutout"], snap=cfg.get("snap", True))
+    fx, fy = cfg.get("pivot", [0.5, 0.5])
+    px, py = left + round(width * fx), top + round(height * fy)        # the pivot on the plate
+    cfg = dict(cfg, _art=art, _pivot=[(px - bounds[0]) / art.width, (py - bounds[1]) / art.height])
+    t, x, y, sx, sy, degrees, _ = cfg["pose"][0]
+    if sx == 1 and sy == 1 and abs(degrees) <= 0.05 and "sway" not in cfg and (round(x), round(y)) != (px, py):
+        raise ValueError(
+            f"{name}: the cutout does not start where it was painted. Its first pose puts the pivot at ({x:g}, {y:g}); "
+            f"in the painting the pivot is at ({px}, {py}). Use that position, or the prop jumps on the first frame.")
+    return cfg
+
+
 def images(folder, shot, size, fps, seed):
     with Image.open(folder / shot["plate"]) as file:
         plate = file.convert("RGB")
@@ -260,7 +363,8 @@ def images(folder, shot, size, fps, seed):
     layers = []
     for cfg in shot.get("layers", []):
         if "cutout" in cfg:
-            art = lift(plate, cfg["cutout"])
+            cfg = painted_prop(plate, cfg, shot["plate"])
+            art = cfg.pop("_art")
         else:
             with Image.open(folder / cfg["image"]) as file:
                 art = file.convert("RGBA")
