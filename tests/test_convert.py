@@ -121,6 +121,11 @@ class Stills(Case):
             visible = out[out[..., 3] > 0]
             self.assertLessEqual(len(np.unique(visible[:, :3], axis=0)), 7, mode)       # transparency takes the eighth
             self.assertFalse(out[out[..., 3] == 0].any(), mode)                         # empty cells carry no colour
+        # soft keeps the rim's transparency, and its colours still come from the palette
+        self.run_job(input=self.save(image), convert={"mode": "grid", "grid": 40, "sampling": "area", "colors": 8, "alpha": "soft"})
+        out = self.out()
+        self.assertGreater(len(set(np.unique(out[..., 3]).tolist()) - {0, 255}), 3)
+        self.assertLessEqual(len(np.unique(out[out[..., 3] > 0][:, :3], axis=0)), 7)
 
     def test_a_small_area_with_its_own_colour_keeps_it(self):
         y, x = np.mgrid[0:200, 0:200]

@@ -59,6 +59,7 @@ def parser():
     convert.add_argument("--strength", type=int, choices=(1, 2, 3), help="how freely artist mode interprets")
     convert.add_argument("--contrast", action="store_true", default=None, help="recommended mode: reduce the picture to its big shapes")
     convert.add_argument("--symmetry", choices=("off", "left", "right"))
+    convert.add_argument("--alpha", choices=("hard", "soft"), help="hard: every cell solid or empty (default); soft: shadows and glows keep their transparency")
     convert.add_argument("--scale", type=scale_value, help="enlarge the output by a whole number, or display")
     convert.add_argument("--frame", type=int, help="zero-based frame to export as PNG")
     convert.add_argument("--frames", help="how many frames to take from an animation, or all")

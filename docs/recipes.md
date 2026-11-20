@@ -34,6 +34,7 @@ A still image (PNG, JPEG, WebP and whatever else Pillow reads), a GIF, or a vide
 | `colors` | grid, faithful, artist | 2 to 256 | 12 in grid, otherwise 16 |
 | `palette` | grid, faithful, artist | `"source"`, a palette name, or a list of `"#RRGGBB"` colors | `source` in grid, otherwise `gameboy` |
 | `symmetry` | grid, faithful, artist | `off`, `left`, `right` | `off` |
+| `alpha` | grid, faithful, artist | `hard`: every cell solid or empty; `soft`: cells keep their transparency, for shadows and glows | `hard` |
 
 With `palette: "source"` the picture keeps its own colors, reduced to `colors`. With a palette name in faithful or artist mode, `colors` picks that many entries of the palette, spread over its whole range. `pixel-cat catalog` lists the palette names.
 
@@ -123,7 +124,7 @@ One path, one object, or a list of them. The file extension chooses the format: 
 | `frame` | PNG only: the zero-based frame of an animation |
 | `format` | overrides the extension |
 
-Transparent cells stay transparent in PNG and GIF. In MP4 and WebM they are black. A converted cell is either solid or empty: cells that are less than half covered become empty, the rest solid.
+Transparent cells stay transparent in PNG and GIF. In MP4 and WebM they are black. By default a converted cell is either solid or empty: cells that are less than half covered become empty, the rest solid. With `alpha: "soft"` cells keep their transparency in PNG; GIF knows only solid and empty.
 
 ## The result
 

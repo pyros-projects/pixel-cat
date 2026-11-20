@@ -86,7 +86,8 @@ def convert(job, base):
         images, durations = loops.animate(images[0], loop)
     height, width = images[0].shape[:2]
     display = max(1, min(24, 640 // max(width, height))) if is_project else stills.display_scale(settings, width, height)
-    colours = {int(c) for image in images for c in np.unique(stills.codes(image[..., :3][image[..., 3] >= 128]))}
+    floor = stills.visible_from(settings)
+    colours = {int(c) for image in images for c in np.unique(stills.codes(image[..., :3][image[..., 3] >= floor]))}
     summary.update(width=width, height=height, frames=len(images), durations=durations, colors=len(colours), displayScale=display)
     return path, images, durations, display, summary
 

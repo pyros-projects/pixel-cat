@@ -167,14 +167,15 @@ def nearest(pixels, palette):
     return out
 
 
-def histogram(frames):
-    """Opaque colours and how often they occur, in the order the frames first show them.
+def histogram(frames, floor=128):
+    """The colours of the visible cells and how often they occur, in the order the frames first show them.
 
-    `frames` is a list of (image, weight) pairs. Returns (colours (n, 3), counts (n,), any transparency).
+    `frames` is a list of (image, weight) pairs. A cell counts as visible from alpha `floor` upwards.
+    Returns (colours (n, 3), counts (n,), any transparency).
     """
     seen, see_through = {}, False
     for image, weight in frames:
-        solid = image[..., 3] >= 128
+        solid = image[..., 3] >= floor
         see_through = see_through or not solid.all()
         unique, first, counts = np.unique(codes(image[..., :3][solid]), return_index=True, return_counts=True)
         for at in np.argsort(first, kind="stable"):
@@ -264,9 +265,9 @@ def rescue(palette, colours, counts, far=48, share=0.0015):
     return palette
 
 
-def apply_palette(image, palette):
-    """Move every opaque pixel to its nearest palette colour, in place."""
-    solid = image[..., 3] >= 128
+def apply_palette(image, palette, floor=128):
+    """Move every visible cell to its nearest palette colour, in place."""
+    solid = image[..., 3] >= floor
     if not solid.any() or not len(palette):
         return
     unique, inverse = np.unique(codes(image[..., :3][solid]), return_inverse=True)
@@ -346,8 +347,8 @@ def theme(settings, palettes):
 
 
 def harden(image):
-    """Pixel art has no half-transparent cells: each one becomes solid or empty. A soft edge would otherwise
-    carry colours that no palette covers, and a 16-colour sprite would hold hundreds."""
+    """Pixel art has hard edges: each cell becomes solid or empty. This is the default. With alpha "soft" the
+    cells keep their transparency, for a shadow or a glow, and their colours still come from the palette."""
     empty = image[..., 3] < 128
     image[empty] = 0
     image[~empty, 3] = 255
@@ -361,28 +362,34 @@ def sample(source, settings):
         width, height = fit(w, h, math.inf if settings["grid"] == "native" else settings["grid"])
         image = SAMPLERS[settings["sampling"]](source, width, height)
         mirror(image, settings["symmetry"])
-        return harden(image)
-    scaled = max(1, half_up(h * settings["width"] / w))
-    width, height = (max(1, half_up(n / settings["pixel"])) for n in (settings["width"], scaled))
-    return harden((sample_area if settings["mode"] == "artist" else sample_exact)(source, width, height))
+    else:
+        scaled = max(1, half_up(h * settings["width"] / w))
+        width, height = (max(1, half_up(n / settings["pixel"])) for n in (settings["width"], scaled))
+        image = (sample_area if settings["mode"] == "artist" else sample_exact)(source, width, height)
+    return image if settings.get("alpha") == "soft" else harden(image)
+
+
+def visible_from(settings):
+    """From which alpha a cell takes part in the palette: every cell that shows at all when edges stay soft."""
+    return 1 if settings.get("alpha") == "soft" else 128
 
 
 def finish(images, settings, colours, weights=None):
     """The second half: bring the sampled images to their final colours. Several images share one palette."""
-    weights = weights or [1] * len(images)
+    weights, floor = weights or [1] * len(images), visible_from(settings)
     if settings["mode"] == "artist":
         for image in images:
             stylize(image, settings["strength"], colours)
     if colours is not None:
         for image in images:
-            apply_palette(image, colours)
+            apply_palette(image, colours, floor)
     else:
-        found, counts, see_through = histogram(list(zip(images, weights)))
+        found, counts, see_through = histogram(list(zip(images, weights)), floor)
         slots = max(1, settings["colors"] - int(see_through))
         if len(found) > slots:
             shared = median_cut(found, counts, slots)
             for image in images:
-                apply_palette(image, shared)
+                apply_palette(image, shared, floor)
     if settings["mode"] != "grid":
         for image in images:
             mirror(image, settings["symmetry"])

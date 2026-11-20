@@ -6,9 +6,9 @@ MODES = ("recommended", "grid", "faithful", "artist")
 SAMPLING = ("exact", "ink", "crisp", "area")
 OPTIONS = {
     "recommended": {"contrast"},
-    "grid": {"grid", "sampling", "colors", "palette", "symmetry"},
-    "faithful": {"width", "pixel", "colors", "palette", "symmetry"},
-    "artist": {"width", "pixel", "colors", "palette", "symmetry", "strength"},
+    "grid": {"grid", "sampling", "colors", "palette", "symmetry", "alpha"},
+    "faithful": {"width", "pixel", "colors", "palette", "symmetry", "alpha"},
+    "artist": {"width", "pixel", "colors", "palette", "symmetry", "strength", "alpha"},
 }
 
 
@@ -36,7 +36,7 @@ def conversion(raw):
         "mode": mode, "grid": 160, "sampling": "exact", "width": 800, "pixel": 8, "strength": 2, "contrast": False,
         "colors": 12 if mode == "grid" else 16,
         "palette": "source" if mode in ("grid", "recommended") else "gameboy",
-        "symmetry": "off",
+        "symmetry": "off", "alpha": "hard",
     } | raw
     for name, low, high in (("width", 32, 2400), ("pixel", 2, 40), ("strength", 1, 3), ("colors", 2, 256)):
         integer(values[name], low, high, name)
@@ -44,6 +44,8 @@ def conversion(raw):
         integer(values["grid"], 1, 2048, "grid")
     if values["sampling"] not in SAMPLING or values["symmetry"] not in ("off", "left", "right"):
         raise ValueError("Unknown sampling or symmetry setting")
+    if values["alpha"] not in ("hard", "soft"):
+        raise ValueError("alpha is hard (every cell solid or empty) or soft (shadows and glows keep their transparency)")
     if type(values["contrast"]) is not bool:
         raise ValueError("contrast must be true or false")
     palette = values["palette"]
