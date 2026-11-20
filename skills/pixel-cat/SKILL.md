@@ -99,7 +99,8 @@ it while they watch, open the studio. Its chat is wired to this session.
    are in `<home>/docs/studio.md`). For a figure that moves, put each part on
    a layer, give the layers joints (`joint`: a pivot, and the layer it hangs
    on) and pose a few frames (`pose`); the frames between follow, and a hand
-   comes along with its forearm. The user sees each change as it happens
+   comes along with its forearm. `part` does the first two steps for a piece
+   of a flat drawing: the cells of an area move to a new layer with a joint. The user sees each change as it happens
    and can take all of them back with one Undo. Prefer a new layer for
    anything they might not want. Look again when you are done.
 5. Answer in the chat, not in the terminal: `pixel-cat say "..."`. Keep it

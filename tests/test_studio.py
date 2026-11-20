@@ -338,6 +338,39 @@ class Joints(unittest.TestCase):
         self.assertEqual((green(0), green(2)), ((18, 14, 22, 18), (6, 26, 10, 30)))   # around the wrist, wherever the wrist is
         self.assertEqual(p.summary()["layers"][1]["joint"]["parent"], 2)
 
+    def test_a_piece_of_a_flat_drawing_becomes_a_part_in_one_step(self):
+        p = Project(40, 40)
+        p.apply({"op": "draw", "color": "#c82828", "rect": [14, 10, 8, 20]})        # a body ...
+        p.apply({"op": "draw", "color": "#2850dc", "rect": [22, 12, 10, 4]})        # ... with an arm to the right
+        p.apply({"op": "add-frame", "copy": 0, "count": 2})                         # the same drawing, held over three frames
+        before = [p.composite(f) for f in range(3)]
+        note = p.apply({"op": "part", "layer": 0, "rect": [22, 8, 14, 12], "name": "Arm"})
+        self.assertEqual(note, "made a part of 40 cells of layer Layer 1: they are on the new layer Arm above it, which turns around 27, 14")
+        body, arm = p.layers
+        self.assertEqual(([l["name"] for l in p.layers], arm["joint"]["pivot"], arm["joint"]["parent"]), (["Layer 1", "Arm"], [27.0, 14.0], None))
+        for frame in range(3):                                                      # nothing looks different, on any frame
+            self.assertTrue((p.composite(frame) == before[frame]).all())
+            self.assertEqual((self.where(arm["cels"][frame], self.BLUE), self.where(body["cels"][frame], self.BLUE)), ((22, 12, 31, 15), None))
+            self.assertEqual(int((body["cels"][frame][..., 3] > 0).sum()), 160)     # the body kept its own cells
+        self.assertTrue(arm["cels"][0] is arm["cels"][2] and body["cels"][0] is body["cels"][2])   # a held drawing is still one drawing
+        # the arm turns at the shoulder now, and where it was the layer below is empty
+        p.apply({"op": "joint", "layer": 1, "pivot": [22.5, 14.5]})
+        p.apply({"op": "pose", "layer": 1, "frame": 1, "angle": 90})
+        down = p.composite(1)
+        self.assertEqual((self.where(down, self.BLUE), int(down[12, 28, 3])), ((21, 14, 24, 23), 0))
+        p.save(self.folder / "part.pixelcat")
+        self.assertTrue((Project.load(self.folder / "part.pixelcat").composite(1) == down).all())
+        # a piece of a part hangs on the part it came from, and a pivot can be given at once
+        from pixel_cat import joints
+
+        hand = [[x, y] for x in range(29, 32) for y in range(12, 16)]
+        self.assertIn("turns around 29.5, 14.5", p.apply({"op": "part", "layer": 1, "cells": hand, "pivot": [29.5, 14.5], "name": "Hand"}))
+        self.assertEqual((p.layers[2]["name"], joints.parent_of(p.layers, 2)), ("Hand", 1))
+        for bad, why in (({"rect": [0, 0, 5, 5]}, "nothing drawn in that area"), ({}, "part needs an area")):
+            with self.assertRaisesRegex(ValueError, why):
+                p.apply({"op": "part", "layer": 0, **bad})
+        self.assertEqual(len(p.layers), 3)
+
     def test_baking_turns_the_motion_into_plain_frames(self):
         p = self.arm()
         before = [p.composite(f) for f in range(4)]

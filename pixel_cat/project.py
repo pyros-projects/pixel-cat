@@ -508,6 +508,42 @@ class Project:
             on = joints.parent_of(self.layers, index)
             return (f"gave layer {layer['name']} a joint" if new else f"changed the joint of layer {layer['name']}") + \
                 (f", hanging on {self.layers[on]['name']}" if on is not None else "")
+        if kind == "part":
+            # a piece of a layer becomes a part of its own: its drawn cells move to a new layer above, on every
+            # frame, and that layer gets a joint
+            keys(op, {"op", "layer", "rect", "points", "cells", "name", "pivot"}, "part")
+            index = self._at(op, "layer", layers)
+            source = self.layers[index]
+            if source["locked"]:
+                raise ValueError(f"Layer {index} is locked")
+            if not any(name in op for name in ("rect", "points", "cells")):
+                raise ValueError("part needs an area: rect, points or cells")
+            if layers >= LIMITS["layers"]:
+                raise ValueError("A project holds up to 32 layers")
+            mask = edits.area(op, self.width, self.height)
+            split, reach = {}, np.zeros_like(mask)                    # a drawing held over several frames is split once
+            for cel in source["cels"]:
+                if cel is None or id(cel) in split:
+                    continue
+                taken = mask & (cel[..., 3] > 0)
+                piece, rest = self.blank(), cel.copy()
+                piece[taken], rest[taken] = cel[taken], 0
+                split[id(cel)] = (rest if rest[..., 3].any() else None, piece if taken.any() else None)
+                reach |= taken
+            if not reach.any():
+                raise ValueError(f"There is nothing drawn in that area on layer {source['name']}")
+            ys, xs = np.nonzero(reach)
+            middle = [(int(xs.min()) + int(xs.max()) + 1) / 2, (int(ys.min()) + int(ys.max()) + 1) / 2]
+            pivot = joints.point(op["pivot"], self.width, self.height) if "pivot" in op else middle
+            new = self._layer(str(op.get("name") or f"{source['name']} part")[:60])
+            new["cels"] = [None if cel is None else split[id(cel)][1] for cel in source["cels"]]
+            source["cels"] = [None if cel is None else split[id(cel)][0] for cel in source["cels"]]
+            # a piece of a jointed layer hangs on it, so it still goes where the layer goes
+            new["joint"] = {"pivot": pivot, "parent": source["id"] if source.get("joint") else None, "wrap": True, "drag": None,
+                            "sway": None, "keys": [None] * frames}
+            self.layers.insert(index + 1, new)
+            return (f"made a part of {int(reach.sum())} cells of layer {source['name']}: they are on the new layer {new['name']} above it, "
+                    f"which turns around {pivot[0]:g}, {pivot[1]:g}")
         if kind == "pose":
             # a key on one frame: how far the jointed layer is turned and moved there
             keys(op, {"op", "layer", "frame", "angle", "x", "y", "ease", "remove"}, "pose")
@@ -626,5 +662,5 @@ class Project:
 
 
 OPERATIONS = ["draw", "clear", "set-cel", "add-layer", "remove-layer", "move-layer", "set-layer", "merge-down", "add-frame",
-              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "joint", "pose", "bake",
+              "remove-frame", "move-frame", "set-frame", "palette", "palette-from-art", "edits", "hold", "joint", "part", "pose", "bake",
               "append", "place", "resize"]

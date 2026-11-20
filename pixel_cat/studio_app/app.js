@@ -103,7 +103,7 @@ function jointForm() {
   if ($("jointPanel").hidden || !S.doc) return;
   const layer = S.doc.layers[S.layer], joint = layer.joint;
   $("jointNone").hidden = !!joint; $("jointSome").hidden = !joint;
-  if (!joint) { $("jointNone").textContent = `Layer "${layer.name}" has no joint yet. Click on the picture where it turns: the elbow, the hip, the hinge.`; return; }
+  if (!joint) { $("jointNone").textContent = `Layer "${layer.name}" has no joint yet. Click on the picture where it turns: the elbow, the hip, the hinge. To make a part out of a piece of this layer, select the piece and press ✂ above the layers.`; return; }
   const at = layer.at[S.frame], key = joint.keys[S.frame], parent = $("jointParent"), below = carried(S.layer);
   parent.replaceChildren(new Option("nothing", ""));
   S.doc.layers.forEach((other, n) => { if (other.joint && !below.includes(n)) parent.append(new Option(other.name, n)); });
@@ -885,6 +885,13 @@ $("paletteDialog").addEventListener("close", () => { if ($("paletteDialog").retu
 $("named").onchange = () => { const name = $("named").value; $("named").value = ""; if (name) op({ op: "palette", name }); };
 $("addLayer").onclick = async () => { const done = await op({ op: "add-layer", at: S.layer + 1 }); if (done) go(S.frame, S.layer + 1); };
 $("delLayer").onclick = () => op({ op: "remove-layer", layer: S.layer });
+$("partLayer").onclick = async () => {      // the selection becomes a part of its own; the next click on the picture says where it turns
+  if (!S.sel) return toast("Select the piece first: with a box (M), a lasso (Q), a polygon (W) or the brush (A)");
+  if (!usable()) return;
+  const from = S.layer, where = S.sel.mask ? { cells: selectedCells() } : { rect: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] };
+  if (!await op({ op: "part", layer: from, ...where })) return;
+  S.sel = null; go(S.frame, from + 1); setTool("pose"); S.pivoting = true; jointForm(); toast("Click where the part turns");
+};
 $("mergeLayer").onclick = async () => { const done = await op({ op: "merge-down", layer: S.layer }); if (done) go(S.frame, S.layer - 1); };
 $("upLayer").onclick = async () => { if (S.layer < S.doc.layers.length - 1 && await op({ op: "move-layer", layer: S.layer, to: S.layer + 1 })) go(S.frame, S.layer + 1); };
 $("downLayer").onclick = async () => { if (S.layer > 0 && await op({ op: "move-layer", layer: S.layer, to: S.layer - 1 })) go(S.frame, S.layer - 1); };
