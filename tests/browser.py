@@ -176,15 +176,15 @@ class Browser:
                 raise AssertionError(f"Waited {seconds} s in vain for: {script}")
             time.sleep(0.05)
 
-    def _mouse(self, kind, x, y, down=False):
+    def _mouse(self, kind, x, y, down=False, modifiers=0):
         self.ask("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left" if kind != "mouseMoved" else "none", buttons=1 if down else 0,
-                 clickCount=0 if kind == "mouseMoved" else 1, pointerType="mouse")
+                 clickCount=0 if kind == "mouseMoved" else 1, pointerType="mouse", modifiers=modifiers)
 
-    def press(self, x, y):
+    def press(self, x, y, shift=False):
         """Move the pointer there, button down, button up."""
         self._mouse("mouseMoved", x, y)
-        self._mouse("mousePressed", x, y, True)
-        self._mouse("mouseReleased", x, y)
+        self._mouse("mousePressed", x, y, True, modifiers=8 if shift else 0)
+        self._mouse("mouseReleased", x, y, modifiers=8 if shift else 0)
 
     def down(self, x, y):
         """Move the pointer there and hold the button down."""

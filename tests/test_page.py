@@ -205,6 +205,21 @@ class Page(unittest.TestCase):
         self.assertTrue((project.cel(0, 2) == self.scene).all())
         self.assertEqual(self.browser.run("window.studio.frame"), 1)                # and that frame is still the one in hand
 
+    def test_selected_frames_stay_selected_when_other_frames_come_in(self):
+        original = [frame["id"] for frame in self.saved().frames]
+        self.browser.press(*self.spot('.head[data-frame="1"]'), shift=True)
+        self.browser.until("document.querySelectorAll('.head.picked').length === 2")
+        self.room.change({"op": "add-frame", "at": 0}, "agent")
+        self.browser.until("document.querySelectorAll('.head').length === 3")
+        self.room.change({"op": "add-frame", "at": 2}, "agent")
+        self.browser.until("document.querySelectorAll('.head').length === 4")
+        selected = self.browser.run("Array.from(document.querySelectorAll('.head.picked'), h => window.studio.doc.frames[+h.dataset.frame].id)")
+        self.assertEqual(selected, original)
+        incoming = [frame["id"] for frame in self.saved().frames if frame["id"] not in original]
+        self.browser.press(*self.spot("#delFrame"))
+        self.browser.until("document.querySelectorAll('.head').length === 2")
+        self.assertEqual([frame["id"] for frame in self.saved().frames], incoming)
+
     def test_a_panel_takes_its_own_presses(self):
         self.browser.press(*self.spot("#tidy"))
         self.browser.until("!document.getElementById('cleanup').hidden ? 1 : 0")

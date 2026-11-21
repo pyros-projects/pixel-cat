@@ -199,7 +199,11 @@ class Studio:
             self.undo.append((before, note, by))
             del self.undo[:-200]
             self.redo.clear()
-            return self._changed(by, note)
+            done = self._changed(by, note)
+            if op["op"] == "add-frame":
+                previous = {frame["id"] for frame in before.frames}
+                done["addedFrames"] = [frame["id"] for frame in self.project.frames if frame["id"] not in previous]
+            return done
 
     def _changed(self, by, note):
         self.rev += 1

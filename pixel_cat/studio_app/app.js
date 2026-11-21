@@ -15,7 +15,7 @@ const TOOLS = [
   ["hand", "✋", "H", "Pan (or hold Space)"]];
 const S = { doc: null, meta: {}, cels: [], frame: 0, layer: 0, tool: "pencil", colour: "#f2a65a", size: 1, mirror: false,
   zoom: 8, panX: 0, panY: 0, sel: null, float: null, clip: null, playing: false, timer: 0, pending: 0, drawing: false,
-  known: 0, preview: null, hover: null, space: false, fitted: false };
+  known: 0, preview: null, hover: null, space: false, fitted: false, selectedFrameIds: new Set() };
 const SIZES = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 const view = $("view"), over = $("over"), stage = $("stage");
 
@@ -51,8 +51,9 @@ async function load(flash) {
   const held = S.doc && S.doc.layers[S.layer] ? S.doc.layers[S.layer].id : null;   // the layer in hand stays in hand, wherever a change puts it in the list
   const open = S.doc && S.doc.frames[S.frame] ? S.doc.frames[S.frame].id : null;   // and so does the frame
   S.doc = state.doc; S.meta = state.meta;
-  if (state.meta.run !== S.run) { S.run = state.meta.run; S.known = state.meta.rev; }   // another run of the studio counts its changes from nothing
+  if (state.meta.run !== S.run) { S.run = state.meta.run; S.known = state.meta.rev; S.selectedFrameIds.clear(); }
   else S.known = Math.max(S.known, state.meta.rev);
+  if (S.selectedFrameIds.size) S.selectedFrameIds = new Set(S.doc.frames.map(f => f.id).filter(id => S.selectedFrameIds.has(id)));
   const again = S.doc.layers.findIndex(layer => layer.id === held); if (again >= 0) S.layer = again;
   const still = S.doc.frames.findIndex(frame => frame.id === open); if (still >= 0) S.frame = still;
   const pictures = await Promise.all(state.doc.pictures.map(decode));   // each picture is opened once; every cel gets a canvas of its own, because drawing changes it
@@ -632,7 +633,6 @@ function chrome() {
   $("undo").disabled = !S.meta.undo; $("redo").disabled = !S.meta.redo;
   $("last").innerHTML = ""; if (S.meta.last) { const who = document.createElement("b"); who.textContent = S.meta.last[1] === "agent" ? "agent" : "you"; $("last").append("last: ", who, " " + S.meta.last[0]); }
   $("frameNo").textContent = `${S.frame + 1} of ${S.doc.frames.length}`; $("duration").value = S.doc.frames[S.frame].duration;
-  if (S.range && S.range[0] > S.doc.frames.length - 1) S.range = null;
   $("durationAll").textContent = pickedFrames() ? "selected" : "all"; $("scrub").max = S.doc.frames.length - 1; $("scrub").value = S.frame; $("scrub").hidden = S.doc.frames.length < 2;
   const agent = $("agent"); agent.className = "status" + (S.meta.agent ? (S.meta.listening ? " listening" : " busy") : "");
   agent.textContent = !S.meta.agent ? "not connected" : S.meta.listening ? "listening" : "working or away";
@@ -660,9 +660,16 @@ function timeline() {
   const sheet = document.createElement("div"); sheet.className = "sheet"; sheet.style.gridTemplateColumns = `auto repeat(${S.doc.frames.length}, 34px)`;
   sheet.append(document.createElement("span"));
   S.doc.frames.forEach((frame, f) => {
-    const head = document.createElement("div"); head.className = "head" + (f === S.frame ? " on" : ""); head.dataset.frame = f;
+    const head = document.createElement("div"); head.className = "head" + (f === S.frame ? " on" : ""); head.dataset.frame = f; head.dataset.frameId = frame.id;
     head.innerHTML = `${f + 1}<small>${frame.duration}</small>`; head.title = `Frame ${f + 1}, ${frame.duration} ms. Shift+click selects a range, drag moves it.`;
-    head.onclick = event => { if (event.shiftKey) { S.range = [Math.min(S.frame, f), Math.max(S.frame, f)]; rangeMarks(); chrome(); } else { S.range = null; rangeMarks(); go(f, S.layer); } };
+    head.onclick = event => {
+      if (event.shiftKey) {
+        const frames = S.doc.frames.slice(Math.min(S.frame, f), Math.max(S.frame, f) + 1);
+        S.selectedFrameIds = new Set(frames.map(frame => frame.id));
+        chrome();
+      } else { S.selectedFrameIds.clear(); go(f, S.layer); }
+      rangeMarks();
+    };
     head.draggable = true;
     head.ondragstart = event => { event.dataTransfer.setData("text/plain", String(f)); event.dataTransfer.effectAllowed = "move"; };
     head.ondragover = event => { event.preventDefault(); head.classList.add("target"); }; head.ondragleave = () => head.classList.remove("target");
@@ -681,13 +688,28 @@ function timeline() {
   });
   $("timeline").replaceChildren(sheet); rangeMarks();
 }
-function pickedFrames() { if (!S.range) return null; const out = []; for (let f = S.range[0]; f <= Math.min(S.range[1], S.doc.frames.length - 1); f++) out.push(f); return out.length ? out : null; }
-function rangeMarks() { const picked = pickedFrames() || []; document.querySelectorAll(".sheet .head").forEach(head => head.classList.toggle("picked", picked.includes(+head.dataset.frame))); }
+function pickedFrames() {
+  if (!S.selectedFrameIds.size) return null;
+  const picked = [];
+  S.doc.frames.forEach((frame, i) => { if (S.selectedFrameIds.has(frame.id)) picked.push(i); });
+  return picked.length ? picked : null;
+}
+function rangeMarks() {
+  document.querySelectorAll(".sheet .head").forEach(head => head.classList.toggle("picked", S.selectedFrameIds.has(head.dataset.frameId)));
+}
+function goToFrame(id) {
+  const place = S.doc.frames.findIndex(frame => frame.id === id);
+  if (place >= 0) go(place, S.layer);
+}
 async function moveFrames(from, onto) {       // a dragged frame, or the picked range it belongs to, lands where it is dropped
   const picked = pickedFrames(), block = picked && picked.includes(from) ? picked : [from];
   if (block.includes(onto)) return;
   const before = block.filter(f => f < onto).length, to = onto - before + (onto > from ? 1 : 0);
-  if (await op({ op: "move-frame", frames: block, to })) { S.range = block.length > 1 ? [to, to + block.length - 1] : null; go(to + block.indexOf(from), S.layer); rangeMarks(); chrome(); }
+  const dragged = S.doc.frames[from].id;
+  if (await op({ op: "move-frame", frames: block, to })) {
+    if (block.length === 1) S.selectedFrameIds.clear();
+    goToFrame(dragged); rangeMarks(); chrome();
+  }
 }
 function thumbs(layer, frame) {
   const button = document.querySelector(`.cel[data-layer="${layer}"][data-frame="${frame}"]`); if (!button) return;
@@ -949,23 +971,29 @@ $("partMenu").onclick = async event => {     // then the next click on the pictu
 $("mergeLayer").onclick = async () => { const at = S.layer; if (await op({ op: "merge-down", layer: at })) go(S.frame, at - 1); };
 $("upLayer").onclick = async () => { const at = S.layer; if (at < S.doc.layers.length - 1 && await op({ op: "move-layer", layer: at, to: at + 1 })) go(S.frame, at + 1); };
 $("downLayer").onclick = async () => { const at = S.layer; if (at > 0 && await op({ op: "move-layer", layer: at, to: at - 1 })) go(S.frame, at - 1); };
-$("addFrame").onclick = async () => { S.range = null; if (await op({ op: "add-frame", at: S.frame + 1 })) go(S.frame + 1, S.layer); };
-$("copyFrame").onclick = async () => {      // one frame, or the picked range, copied right behind itself
+async function addFrames(operation, selectCopies = false) {
+  const run = S.run;
+  const done = await op(operation);
+  if (!done || S.run !== run) return;
+  S.selectedFrameIds = new Set(selectCopies ? done.addedFrames : []);
+  goToFrame(done.addedFrames[0]); rangeMarks(); chrome();
+}
+$("addFrame").onclick = () => addFrames({ op: "add-frame", at: S.frame + 1 });
+$("copyFrame").onclick = () => {
   const picked = pickedFrames();
-  if (!picked) { if (await op({ op: "add-frame", at: S.frame + 1, copy: S.frame })) go(S.frame + 1, S.layer); return; }
-  const at = picked[picked.length - 1] + 1;
-  if (await op({ op: "add-frame", at, copy: picked })) { S.range = [at, at + picked.length - 1]; go(at, S.layer); rangeMarks(); chrome(); }
+  const last = picked ? picked[picked.length - 1] : S.frame;
+  return addFrames({ op: "add-frame", at: last + 1, copy: picked || S.frame }, Boolean(picked));
 };
 $("extendFrames").onclick = () => {
   const more = parseInt(prompt("How many more frames? They repeat the last one.", "8"), 10);
   if (more > 0) op({ op: "add-frame", copy: S.doc.frames.length - 1, count: more });
 };
-$("delFrame").onclick = async () => { const picked = pickedFrames(); S.range = null; await op(picked ? { op: "remove-frame", frames: picked } : { op: "remove-frame", frame: S.frame }); };
+$("delFrame").onclick = () => { const picked = pickedFrames(); return op(picked ? { op: "remove-frame", frames: picked } : { op: "remove-frame", frame: S.frame }); };
 async function nudgeFrames(by) {             // the frame in hand, or the picked range, one place to the left or right
   const block = pickedFrames() || [S.frame], to = block[0] + by;
   if (to < 0 || block[block.length - 1] + by > S.doc.frames.length - 1) return;
-  const at = block.indexOf(S.frame);
-  if (await op({ op: "move-frame", frames: block, to })) { if (S.range) S.range = [to, to + block.length - 1]; go(to + Math.max(0, at), S.layer); rangeMarks(); }
+  const held = S.doc.frames[block.includes(S.frame) ? S.frame : block[0]].id;
+  if (await op({ op: "move-frame", frames: block, to })) goToFrame(held);
 }
 $("leftFrame").onclick = () => nudgeFrames(-1); $("rightFrame").onclick = () => nudgeFrames(1);
 $("duration").onchange = event => op({ op: "set-frame", frame: S.frame, duration: +event.target.value });
