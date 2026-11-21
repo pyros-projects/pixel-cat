@@ -117,12 +117,15 @@ A project is one JSON file ending in `.pixelcat`:
  "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
              "cels": [0, 0, null]},
             {"id": "L2", "name": "Ink", "visible": true, "locked": false, "opacity": 1,
-             "cels": [1, 1, 1]}]}
+             "cels": [1, 1, 1]}],
+ "next_layer": 3}
 ```
 
 Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is the number of its picture in `pictures`, counted from 0. A picture is a PNG of the project's size. A drawing that is held over several frames, or shows on several layers, is stored once, so a long hold costs nothing. A project has up to 256 frames, 32 layers and 2048 cells per side.
 
 Files of version 1 carried the PNG in the cel itself (`"cels": ["<PNG, base64>", null]`). They still open, and are saved in the new form.
+
+A layer keeps its `id` for good, and no id is given twice: `next_layer` is the number the next new layer gets, also after a layer has gone. So whoever still shows an older list of layers cannot take a new layer for one that is gone. A file without `next_layer` opens as well; the next layer then gets the number after the highest one in the file.
 
 A layer with a joint carries it in the file. Its cels are the drawing at rest; `keys` has one entry per frame, `null` where the frame lies between keys, and `parent` is the `id` of the layer it hangs on:
 

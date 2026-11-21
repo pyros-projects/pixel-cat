@@ -816,6 +816,99 @@ class Studios(unittest.TestCase):
             lines = [stream.readline().decode().strip() for _ in range(3)]
         self.assertEqual(json.loads(lines[2].removeprefix("data: ")), {"type": "hello", "rev": self.call("/api/state")["meta"]["rev"]})
 
+    def test_no_layer_gets_the_id_of_one_that_is_gone(self):
+        ids = lambda: [layer["id"] for layer in self.call("/api/state")["doc"]["layers"]]   # noqa: E731
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Cat"}})
+        self.call("/api/op", {"op": {"op": "draw", "layer": 1, "color": "#ff0000", "points": [[1, 1]]}})
+        seen = ids()                                                                       # a page reads the project: the first layer and the cat
+        self.assertEqual(seen, ["L1", "L2"])
+        self.call("/api/op", {"op": {"op": "merge-down", "layer": 1}, "by": "agent"})       # the cat goes into the layer below
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Dog"}, "by": "agent"})     # and a new layer takes its place in the list
+        self.assertEqual(ids(), ["L1", "L3"])                                              # but not its id
+        with self.assertRaisesRegex(ValueError, "That layer is no longer there"):          # so the page cannot draw on the dog for the cat
+            self.call("/api/op", {"op": {"op": "draw", "layer": 1, "color": "#00ff00", "points": [[2, 2]]}, "layers": seen})
+        self.call("/api/undo", {})                                                         # the dog is taken back
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Bird"}})
+        self.assertEqual(ids(), ["L1", "L4"])                                              # and its id stays its own
+        again = Project.load(self.folder / "s.pixelcat")                                   # the count is in the file
+        again.apply({"op": "remove-layer", "layer": 1})
+        again.apply({"op": "add-layer"})
+        self.assertEqual([layer["id"] for layer in again.layers], ["L1", "L5"])
+        old = json.loads((self.folder / "s.pixelcat").read_text())                         # a file without the count: on from its highest id
+        old.pop("next_layer")
+        before = Project.from_json(old)
+        before.apply({"op": "add-layer"})
+        self.assertEqual([layer["id"] for layer in before.layers], ["L1", "L4", "L5"])
+        for odd in ("L\u00b2", "L" + "9" * 5000, "Sky"):                                  # an id that is no number of ours does not stop a file from opening
+            old["layers"][1]["id"], old["next_layer"] = odd, 10 ** 30
+            strange = Project.from_json(old)
+            strange.apply({"op": "add-layer"})
+            self.assertEqual([layer["id"] for layer in strange.layers], ["L1", odd, "L2"])
+        old["layers"][1]["id"], old["next_layer"] = "L999999998", 999999999                # and a count that runs past what a file may state gives none twice
+        far = Project.from_json(old)
+        far.apply({"op": "add-layer"})
+        far.apply({"op": "add-layer"})
+        far = Project.from_json(json.loads(json.dumps(far.to_json())))
+        far.apply({"op": "add-layer"})
+        self.assertEqual(len({layer["id"] for layer in far.layers}), 5)
+        # another project takes this one's place: a picture, then a project file with ids of its own. A page that still
+        # shows the old layers must find none of them among the new ones
+        seen = ids()
+        self.assertEqual(seen, ["L1", "L4"])
+        picture = np.zeros((8, 8, 4), dtype=np.uint8)
+        picture[...] = (200, 60, 60, 255)
+        settings = urllib.parse.quote(json.dumps({"convert": None}))
+        request = urllib.request.Request(f"{self.url}/api/import?name=block.png&how=project&settings={settings}", data=png_bytes(picture), method="POST")
+        urllib.request.urlopen(request).read()
+        self.assertEqual(ids(), ["L5"])
+        for place in (0, 1):
+            with self.assertRaisesRegex(ValueError, "That layer is no longer there"):
+                self.call("/api/op", {"op": {"op": "clear", "layer": place}, "layers": seen})
+        other = Project(8, 8)
+        other.apply({"op": "add-layer", "name": "Arm"})
+        other.apply({"op": "joint", "layer": 1, "pivot": [1, 1]})
+        other.apply({"op": "add-layer", "name": "Hand"})
+        other.apply({"op": "joint", "layer": 2, "pivot": [2, 2], "parent": 1})
+        request = urllib.request.Request(self.url + "/api/import?name=other.pixelcat&how=project&settings=%7B%7D", data=json.dumps(other.to_json()).encode(), method="POST")
+        urllib.request.urlopen(request).read()
+        opened = Project.load(self.folder / "s.pixelcat")
+        self.assertEqual([layer["id"] for layer in opened.layers], ["L6", "L7", "L8"])       # its layers, counted on from here
+        self.assertEqual(opened.layers[2]["joint"]["parent"], "L7")                         # and the hand still hangs on the arm
+
+    def test_a_place_between_layers_stays_between_the_layers_its_sender_saw(self):
+        for name in ("Middle", "Top"):
+            self.call("/api/op", {"op": {"op": "add-layer", "name": name}})
+        names = lambda: [layer["name"] for layer in self.call("/api/state")["doc"]["layers"]]   # noqa: E731
+        read = lambda: [layer["id"] for layer in self.call("/api/state")["doc"]["layers"]]      # noqa: E731
+        agent = lambda **op: self.call("/api/op", {"op": op, "by": "agent"})                    # noqa: E731
+        seen = read()                                                                      # a page reads: Layer 1, Middle, Top
+        agent(op="add-layer", name="Came in", at=0)                                        # each time an agent changes the list before the page acts
+        self.call("/api/op", {"op": {"op": "move-layer", "layer": 1, "to": 2}, "layers": seen})   # Middle one up, as the page sees it: above Top
+        self.assertEqual(names(), ["Came in", "Layer 1", "Top", "Middle"])
+        seen = read()
+        agent(op="add-layer", name="Lowest", at=0)
+        self.call("/api/op", {"op": {"op": "move-layer", "layer": 1, "to": 0}, "layers": seen})   # Layer 1 one down: below what the page shows as its bottom layer
+        self.assertEqual(names(), ["Lowest", "Layer 1", "Came in", "Top", "Middle"])
+        seen = read()
+        agent(op="move-layer", layer=0, to=4)                                              # the agent takes its layer to the top
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "New", "at": 2}, "layers": seen})   # a new layer right above what the page shows as layer 1
+        self.assertEqual(names(), ["Layer 1", "New", "Came in", "Top", "Middle", "Lowest"])
+        seen = read()
+        agent(op="add-layer", name="Between", at=5)                                        # a layer comes in right below the top one
+        with self.assertRaisesRegex(ValueError, "Another layer lies below it now"):        # the page merges the top layer down: into which one?
+            self.call("/api/op", {"op": {"op": "merge-down", "layer": 5}, "layers": seen})
+        self.assertEqual(names(), ["Layer 1", "New", "Came in", "Top", "Middle", "Between", "Lowest"])
+        self.call("/api/op", {"op": {"op": "merge-down", "layer": 6}, "layers": read()})   # with the list as it is, it merges
+        self.assertEqual(names(), ["Layer 1", "New", "Came in", "Top", "Middle", "Between"])
+        seen = read()
+        agent(op="move-layer", layer=0, to=5)                                              # the bottom layer goes to the top
+        with self.assertRaisesRegex(ValueError, "The bottom layer has nothing below it"):  # what the page shows at the bottom has nothing below it for the page
+            self.call("/api/op", {"op": {"op": "merge-down", "layer": 0}, "layers": seen})
+        self.call("/api/op", {"op": {"op": "move-layer", "layer": 3, "to": 3}, "layers": seen})   # a move that changes nothing as the page sees it
+        self.assertEqual(names(), ["New", "Came in", "Top", "Middle", "Between", "Layer 1"])
+        with self.assertRaisesRegex(ValueError, "their ids, each one once"):               # a list that names a layer twice is no list of layers
+            self.call("/api/op", {"op": {"op": "move-layer", "layer": 0, "to": 1}, "layers": [seen[0], seen[0]]})
+
     def test_a_frame_becomes_a_loop_over_a_painted_area_and_undo_brings_it_back(self):
         self.call("/api/op", {"op": {"op": "resize", "width": 24, "height": 24}})
         self.call("/api/op", {"op": {"op": "draw", "color": "#2060c0", "rect": [0, 0, 24, 24]}})
@@ -865,6 +958,7 @@ class Studios(unittest.TestCase):
         seen = Image.open(io.BytesIO(studio.call("/api/look?frame=1&scale=1", url=self.url, raw=True))).convert("RGBA")
         self.assertEqual(seen.getpixel((1, 7)), (255, 0, 0, 255))                                     # and that is what an agent sees
         old = json.loads((self.folder / "s.pixelcat").read_text())
+        old.pop("next_layer")
         for entry in old["layers"]:                                 # a file from before layers had ids still opens
             entry.pop("id"), entry.pop("joint")
         self.assertEqual(Project.from_json(old).layers[0]["id"], "L1")

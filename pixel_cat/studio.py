@@ -69,21 +69,57 @@ class Studio:
 
     # ------------------------------------------------------------ the project
 
+    def put(self, project):
+        """Another project takes the place of this one. Its layers get ids that were never given here, so that
+        a list of the old layers, which someone may still show, names none of the new ones."""
+        project.renumber(self.project.next_layer)
+        self.project = project
+
     def meant(self, op, seen):
         """An operation as its sender meant it. A page names a layer by its place in the list it shows, and that
         list can be older than the project: someone else may have added, removed or moved a layer since. `seen`
         is the sender's list of layer ids, from the bottom up. The places in `layer` and `parent` are read from
-        it and turned into the places those layers have now."""
+        it and turned into the places those layers have now. A place between layers (`to` when a layer is
+        moved, `at` when one is added) is kept between the same two layers, and a layer is merged down only
+        into the layer its sender saw below it."""
         now = [layer["id"] for layer in self.project.layers]
         if not isinstance(seen, list) or seen == now or not isinstance(op, dict):
             return op
+        if not all(isinstance(name, str) for name in seen) or len(set(seen)) != len(seen):
+            raise ValueError("`layers` is the list of the layers the sender sees: their ids, each one once")
+        gone = "is no longer there: the project was changed in the meantime"
+        whole = lambda value: isinstance(value, int) and not isinstance(value, bool)      # noqa: E731
+
+        def between(old, place, new):
+            """The place in the list as it is now that lies right above the layer `place` lay right above; at
+            the very bottom, right below the layer it lay right below."""
+            if place > 0:
+                if old[place - 1] not in new:
+                    raise ValueError(f"The layer below that place {gone}")
+                return new.index(old[place - 1]) + 1
+            return new.index(old[0]) if old and old[0] in new else 0
+
         meant = dict(op)
         for key in ("layer", "parent"):
             place = op.get(key)
-            if isinstance(place, int) and not isinstance(place, bool) and 0 <= place < len(seen):
+            if whole(place) and 0 <= place < len(seen):
                 if seen[place] not in now:
-                    raise ValueError("That layer is no longer there: the project was changed in the meantime")
+                    raise ValueError(f"That layer {gone}")
                 meant[key] = now.index(seen[place])
+        kind, place = op.get("op"), op.get("layer", 0)
+        if kind == "merge-down" and whole(place) and 0 <= place < len(seen):
+            if place == 0:
+                raise ValueError("The bottom layer has nothing below it")      # as the sender sees it; what lies below it now was not meant
+            if meant["layer"] == 0 or now[meant["layer"] - 1] != seen[place - 1]:
+                raise ValueError("Another layer lies below it now: the project was changed in the meantime. Look again, then merge.")
+        if kind == "move-layer" and whole(place) and 0 <= place < len(seen) and whole(op.get("to")) and 0 <= op["to"] < len(seen):
+            moved = seen[place]
+            if op["to"] == place:
+                meant["to"] = meant["layer"]                                    # a move that changes nothing as the sender sees it changes nothing
+            else:
+                meant["to"] = between([name for name in seen if name != moved], op["to"], [name for name in now if name != moved])
+        if kind == "add-layer" and whole(op.get("at")) and 0 <= op["at"] <= len(seen):
+            meant["at"] = between(seen, op["at"], now)
         return meant
 
     def change(self, op, by, seen=None):
@@ -142,7 +178,7 @@ class Studio:
             before = self.project.snapshot()
             still = self.project.composite(max(0, min(len(self.project.frames) - 1, int(frame))))
             images, durations = loops.animate(still, spec)
-            self.project = Project.from_frames(images, durations, "Loop")
+            self.put(Project.from_frames(images, durations, "Loop"))
             if before.palette and not self.project.palette:
                 self.project.palette = before.palette
             note = f"made a loop of {len(images)} frames from frame {frame}"
@@ -157,6 +193,7 @@ class Studio:
                 raise ValueError("Nothing to undo" if back else "Nothing to redo")
             snapshot, note, who = source.pop()
             target.append((self.project.snapshot(), note, who))
+            snapshot.next_layer = max(snapshot.next_layer, self.project.next_layer)   # an id that was given stays given, also when its layer is taken back
             self.project = snapshot
             return self._changed(by, ("took back: " if back else "did again: ") + note)
 
@@ -218,7 +255,7 @@ class Studio:
                 if how == "frames":
                     return self.change({"op": "append", "project": data}, "you") | {"summary": summary, "recommendation": None}
                 before = self.project.snapshot()
-                self.project = other
+                self.put(other)
                 self.undo.append((before, f"opened {name}", "you"))
                 self.redo.clear()
                 return self._changed("you", f"opened {name} with its layers") | {"summary": summary, "recommendation": None}
@@ -246,7 +283,7 @@ class Studio:
         with self.lock:
             if how == "project":
                 before = self.project.snapshot()
-                self.project = Project.from_frames(images, durations, op["name"])
+                self.put(Project.from_frames(images, durations, op["name"]))
                 self.undo.append((before, f"opened {name}", "you"))
                 self.redo.clear()
                 result = self._changed("you", f"opened {name} as {summary['width']} by {summary['height']} cells")

@@ -5,13 +5,16 @@
      "frames": [{"duration": 120}, ...],
      "pictures": ["<PNG, base64>", ...],
      "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
-                 "cels": [0, 0, null, 1, ...]}]}
+                 "cels": [0, 0, null, 1, ...]}],
+     "next_layer": 2}
 
 Layers are listed from the bottom up. Every layer holds one cel per frame; an empty cel is null, a filled one
 is the number of its picture in "pictures". A picture is a PNG of the project's size, so any tool that reads
 JSON and PNG can read a project. A drawing that is held over several frames, or shows on several layers, is
 stored once. Files of version 1 held the PNG in the cel itself; they still open. A layer can carry a "joint":
-then its cels are the drawing at rest, and its keys turn and move it (see joints.py).
+then its cels are the drawing at rest, and its keys turn and move it (see joints.py). A layer keeps its id for
+good and no id is given twice: "next_layer" is the number the next new layer gets, also after a layer has gone.
+A file without it opens as well; the next layer then gets the number after the highest one in the file.
 
 Everything that changes a project goes through `apply`, one small JSON operation at a time. The studio's
 browser, an agent and a script all speak the same operations.
@@ -57,6 +60,11 @@ def colour(value):
     return edits.rgb(value) + [255]
 
 
+def _number(name):
+    """The number in a layer id like "L7"; 0 for any other name."""
+    return int(name[1:]) if isinstance(name, str) and name[:1] == "L" and name[1:].isdecimal() and len(name) <= 10 else 0
+
+
 class Project:
     def __init__(self, width, height):
         integer(width, 1, LIMITS["side"], "width")
@@ -72,8 +80,25 @@ class Project:
     # ------------------------------------------------------------ building
 
     def _new_id(self):
+        """An id for a new layer that no layer of this project has had before. A layer that goes leaves its
+        number unused: whoever still shows the old list of layers must not take a new layer for the old one."""
         taken = {layer.get("id") for layer in getattr(self, "layers", [])}
-        return next(f"L{n}" for n in range(1, len(taken) + 2) if f"L{n}" not in taken)
+        number = max([getattr(self, "next_layer", 1)] + [_number(name) + 1 for name in taken])
+        while f"L{number}" in taken:                                  # an id from a hand-made file that the count does not know
+            number += 1
+        self.next_layer = number + 1
+        return f"L{number}"
+
+    def renumber(self, first):
+        """Give every layer a new id, counted on from `first`; a joint stays on its parent. For a project that
+        takes the place of another one, whose ids may still stand in someone's list of layers."""
+        fresh = {layer["id"]: f"L{first + place}" for place, layer in enumerate(self.layers)}
+        for layer in self.layers:
+            layer["id"] = fresh[layer["id"]]
+            if layer.get("joint") and layer["joint"]["parent"] is not None:
+                layer["joint"]["parent"] = fresh.get(layer["joint"]["parent"])
+        self.next_layer = first + len(fresh)
+        self._posed = {}
 
     def _layer(self, name):
         return {"id": self._new_id(), "name": name, "visible": True, "locked": False, "opacity": 1.0, "cels": [None] * len(self.frames)}
@@ -154,6 +179,7 @@ class Project:
                         for layer in self.layers]
         other.palette = list(self.palette)
         other.locked = self.locked
+        other.next_layer = self.next_layer
         other._posed = self._posed
         other._pngs = self._pngs
         return other
@@ -179,7 +205,7 @@ class Project:
         for gone in set(self._pngs) - set(placed):                    # what is no longer shown is not kept
             del self._pngs[gone]
         return {"format": FORMAT, "version": 2, "width": self.width, "height": self.height, "palette": self.palette,
-                "locked": self.locked, "frames": self.frames, "pictures": pictures, "layers": layers}
+                "locked": self.locked, "frames": self.frames, "pictures": pictures, "layers": layers, "next_layer": self.next_layer}
 
     @classmethod
     def from_json(cls, data):
@@ -192,6 +218,9 @@ class Project:
         project.palette = [c for c in data.get("palette", []) if edits.rgb(c)]
         project.locked = bool(data.get("locked", False))
         project.layers = []
+        given = data.get("next_layer")                                # no id twice: the file says where the count stands, or its highest id does
+        project.next_layer = max([given if isinstance(given, int) and not isinstance(given, bool) and 1 <= given < 10 ** 9 else 1]
+                                 + [_number(layer.get("id")) + 1 for layer in data["layers"] if isinstance(layer, dict)])
         pictures, opened = data.get("pictures", []), {}
 
         def picture(entry):
