@@ -166,21 +166,243 @@ def clean(images, step):
 def mend(image, hole, window=3):
     """Paint what lies around a hole into it, and return the new picture.
 
-    Where the picture repeats itself around the hole, as bricks, tiles or any regular pattern do, the pattern
-    is carried on: whole patches are copied from places that look like what is already there (see _carry_on).
-    Everything else is painted cell by cell in the colours that are common nearby (see _common). No colour
-    comes in that the picture did not have, and the same hole is always filled the same way.
+    First the straight lines: a line or a border that the picture shows on both sides of the hole is drawn
+    through it (see _lines). Then the patterns: where the picture repeats itself around the hole, as bricks,
+    tiles or any regular pattern do, whole patches are copied from places that look like what is already
+    there (see _carry_on). Everything else is painted cell by cell in the colours that are common nearby (see
+    _common). No colour comes in that the picture did not have, and the same hole is always filled the same way.
     """
     out = image.copy()
     if not hole.any() or hole.all():
         return out
-    left = _carry_on(out, hole)
+    lines = _lines(out, hole)
+    left = _carry_on(out, hole, lines) & ~lines
     if left.any():
-        _common(out, left, window)
+        _common(out, left, window, lines)
     return out
 
 
-def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
+def _lines(out, hole, back=32, least=12, short=8, half=3, same=22.0, marked=36.0, most=360):
+    """Draw the straight lines of the picture through a hole, in place, and return the cells of those lines:
+    the ones drawn in the hole, and the ones outside it where each line comes from.
+
+    Two cells on the rim that face each other across the hole are joined when the picture shows the same line
+    behind both. Behind each of them lies a strip, seven cells wide, that runs on from the hole along the way
+    from one to the other. It is a third as long as that way, at least `least` cells and at most `back`
+    (`short` will do where the picture ends before that): the further a line has to go, the more exactly its
+    direction has to be known. Three things are asked of the strips. Each has to look the same step after
+    step, so something runs along it; a line drawn in cells may step a column aside now and then, but it must
+    not move away, as it does when it is followed along a direction that is not its own. The two have to look
+    alike, so it is the same thing on both sides. And something in them has to stand out from their ground by
+    `marked` levels of light: a line, or the border between two areas. Then the cells that stand out are
+    drawn from rim to rim, each half in the colours of its own side. The ground beside them is left to the
+    stages after this one.
+
+    The better a pair fits, the earlier its line is drawn. Each end of a line is used once, and a line that
+    would run along one that is already there, in its place or right beside it, is left out; lines may cross.
+    A curve, a line that shows on one side of the hole only, and a painted line that changes as it goes are
+    not drawn: this stage draws what it can see on both sides, and leaves the rest open.
+    """
+    h, w = hole.shape
+    drawn = np.zeros_like(hole)
+    lines = np.zeros_like(hole)
+    art = ~hole & (out[..., 3] > 0)
+    rgb = out[..., :3].astype(np.float32)
+    tone = stills.luma(rgb)
+    # a rim cell is worth a look when the picture around it is not plain
+    views = lambda fill: np.lib.stride_tricks.sliding_window_view(np.pad(np.where(art, tone, fill), 2, constant_values=fill), (5, 5))     # noqa: E731
+    lively = views(-np.inf).max(axis=(2, 3)) - views(np.inf).min(axis=(2, 3)) >= marked
+    ys, xs = np.nonzero(art & _neighbours(hole, corners=True) & lively)
+    if len(ys) > most:
+        keep = np.arange(0, len(ys), -(-len(ys) // most))
+        ys, xs = ys[keep], xs[keep]
+    count = len(ys)
+    if count < 2:
+        return lines
+    rim = np.stack([ys, xs], axis=1).astype(np.float32)
+    steps_back = np.arange(1, back + 1, dtype=np.float32)
+    beside = np.arange(-half, half + 1, dtype=np.float32)             # its columns, across the way
+    inner = slice(1, 2 * half)                                        # the columns that are compared; the outermost two are room to wobble
+    found = []
+    for a in range(count - 1):
+        way = rim[a + 1:] - rim[a]                                    # to every later rim cell
+        far = np.hypot(way[:, 0], way[:, 1])
+        others = np.nonzero(far >= 6)[0]
+        through = np.ones(len(others), dtype=bool)
+        for share in (0.25, 0.5, 0.75):                               # the way between them leads through the hole
+            y, x = np.rint(rim[a, 0] + way[others, 0] * share).astype(int), np.rint(rim[a, 1] + way[others, 1] * share).astype(int)
+            through &= hole[y, x]
+        others = others[through]
+        if not len(others):
+            continue
+        far = far[others]
+        along = way[others] / far[:, None]
+        across = np.stack([along[:, 1], -along[:, 0]], axis=1)
+        need = np.clip(np.rint(far / 3), least, back)                 # the further a line has to go, the longer it has to be seen
+        behind = steps_back[:int(need.max())]                         # the steps of a strip, away from the hole
+
+        def strip(start, heading):
+            """The picture behind rim cells, as (pairs, steps, columns): its colours, its light, which cells
+            are known, and which steps count. A line that meets the rim at a slant has the hole beside it for
+            its first steps, so a strip begins where its whole width is clear of the hole."""
+            def cells(steps):
+                y = np.rint(start[:, 0, None, None] + heading[:, 0, None, None] * steps[:, :, None] + across[:, 0, None, None] * beside[None, None, :]).astype(int)
+                x = np.rint(start[:, 1, None, None] + heading[:, 1, None, None] * steps[:, :, None] + across[:, 1, None, None] * beside[None, None, :]).astype(int)
+                within = (y >= 0) & (y < h) & (x >= 0) & (x < w)
+                return np.clip(y, 0, h - 1), np.clip(x, 0, w - 1), within
+
+            y, x, within = cells(np.repeat(steps_back[None, :13], len(start), axis=0))
+            clear = ~(within & hole[y, x]).any(axis=2)                # a line that runs along the rim for longer than these is not followed
+            skip = clear.argmax(axis=1)
+            y, x, within = cells(skip[:, None] + behind[None, :])
+            steps = np.minimum(need, within[:, :, half].cumprod(axis=1).sum(axis=1))     # no further than the picture goes
+            counts = behind[None, :] <= steps[:, None]
+            return rgb[y, x], tone[y, x], within & art[y, x] | ~counts[:, :, None], counts, np.where(clear.any(axis=1), steps, 0)
+
+        mine = strip(np.repeat(rim[a][None], len(others), axis=0), -along)
+        theirs = strip(rim[others + a + 1], along)
+        both = mine[2].all(axis=1) & theirs[2].all(axis=1)            # columns that are known at every step on both sides
+        enough = (mine[4] >= short) & (theirs[4] >= short) & (both.sum(axis=1) >= 3) & both[:, half]
+        if not enough.any():
+            continue
+
+        def differ(one, other, marks_one, marks_other, known):
+            """How far two strips are apart, per pair, and by how many columns the second one had to step
+            aside for it (-1, 0 or 1): a slanted line drawn in cells wobbles by one. They have to show a line
+            in the same columns or none in either; a line that one of them lacks is a difference, however small
+            its share of the strip. Then it is the mean over their cells of the largest step in any channel."""
+            best = by = None
+            for aside in (0, -1, 1):
+                moved = slice(1 + aside, 2 * half + aside)
+                valid = known[..., inner] & known[..., moved]
+                apart = (np.abs(one[..., inner, :] - other[..., moved, :]).max(axis=-1) * valid).sum(axis=-1) / np.maximum(1, valid.sum(axis=-1))
+                unlike = ((marks_one[..., inner] != marks_other[..., moved]) & valid).any(axis=-1)
+                apart = np.where(valid[..., half - 1] & (valid.sum(axis=-1) >= 3) & ~unlike, apart, 1e9)
+                if best is None:
+                    best, by = apart, np.zeros(apart.shape, dtype=np.float32)
+                else:
+                    by = np.where((apart < best) & (best > same), aside, by)       # aside only when it does not fit straight on
+                    best = np.minimum(best, apart)
+            return best, by
+
+        def runs(colours, light, counts):
+            """Whether a strip looks the same step after step. Its usual look is the middle colour of each
+            column over its steps, so that a line crossing it somewhere does not set the measure. Gives the
+            usual look, which of its cells stand out, the share of steps that look like it, how far those are
+            from it, the share that stepped aside, and how far the far half of the strip stands aside from the
+            near half: a line that is followed along its own direction steps aside now and then, one that is
+            followed along another direction moves away."""
+            middle = np.maximum(0, counts.sum(axis=1) - 1) // 2      # the lower middle one, so that it is a colour the column really has
+            usual = np.take_along_axis(np.sort(np.where(counts[:, :, None, None], colours, np.inf), axis=1), middle[:, None, None, None], axis=1)[:, 0]
+            usual = np.where(np.isfinite(usual), usual, 0)
+            level = stills.luma(usual)
+            open_ = both | ~both.any(axis=1)[:, None]
+            stands = np.abs(level - np.nanmedian(np.where(open_, level, np.nan), axis=1)[:, None]) >= marked / 2
+            marks = np.abs(light - np.nanmedian(np.where(open_[:, None, :], light, np.nan), axis=2)[:, :, None]) >= marked / 2
+            apart, aside = differ(np.repeat(usual[:, None], len(behind), axis=1), colours, np.repeat(stands[:, None], len(behind), axis=1), marks, np.repeat(both[:, None, :], len(behind), axis=1))
+            alike = (apart <= same) & counts
+            steps = np.maximum(1, counts.sum(axis=1))
+            near, far_half = alike & (behind[None, :] * 2 <= steps[:, None]), alike & (behind[None, :] * 2 > steps[:, None])
+            drift = np.abs((aside * far_half).sum(axis=1) / np.maximum(1, far_half.sum(axis=1)) - (aside * near).sum(axis=1) / np.maximum(1, near.sum(axis=1)))
+            return usual, level, stands, alike.sum(axis=1) / steps, np.where(alike, apart, 0).sum(axis=1) / np.maximum(1, alike.sum(axis=1)), ((aside != 0) & alike).sum(axis=1) / steps, drift
+
+        look_mine, level_mine, stands_mine, share_mine, apart_mine, aside_mine, drift_mine = runs(mine[0], mine[1], mine[3])
+        look_theirs, level_theirs, stands_theirs, share_theirs, apart_theirs, aside_theirs, drift_theirs = runs(theirs[0], theirs[1], theirs[3])
+        ends, stepped = differ(look_mine, look_theirs, stands_mine, stands_theirs, both)
+        wobble = (aside_mine + aside_theirs) / 2                      # a line that runs between two columns steps aside half the time
+        light = (level_mine + level_theirs) / 2                       # the usual look of both sides together
+        seen = both.copy()
+        seen[:, 0] = seen[:, -1] = False
+        contrast = np.where(seen, light, -1e9).max(axis=1) - np.where(seen, light, 1e9).min(axis=1)
+        worst = np.maximum(np.maximum(apart_mine, apart_theirs), ends)
+        take = enough & (worst <= same) & (contrast >= np.maximum(marked, 2 * worst)) & (wobble <= 0.55) & (share_mine >= 0.75) & (share_theirs >= 0.75)
+        take &= np.maximum(drift_mine, drift_theirs) <= 0.5           # but one that is followed along another direction moves away
+        if not take.any():
+            continue
+        for pair in np.nonzero(take)[0]:
+            line = seen[pair] & stands_mine[pair]                     # only what stands out is drawn; the ground is left for later
+            if line.any():
+                columns = [int(column) for column in np.nonzero(line)[0] if 0 <= column + int(stepped[pair]) <= 2 * half]
+                looks = tuple((column - half, look_mine[pair, column], look_theirs[pair, column + int(stepped[pair])]) for column in columns)
+                found.append((float(worst[pair] + 60 * wobble[pair] + 30 * abs(stepped[pair])), a, int(others[pair] + a + 1), looks, float(stepped[pair])))
+    found.sort()
+    source = out.copy()
+    flank = np.zeros_like(hole)                                       # ground next to a drawn line: no other line belongs there
+    ended = np.zeros_like(hole)                                       # where a drawn line meets the rim: each end is used once
+
+    def cell(start, heading, step, column, across):
+        return int(round(start[0] + heading[0] * step + across[0] * column)), int(round(start[1] + heading[1] * step + across[1] * column))
+
+    for _, a, b, looks, aside in found:                               # the columns as this end shows them; the other end shows them `aside` further
+        if not looks:
+            continue
+        columns = [column for column, _, _ in looks]
+        way = rim[b] - rim[a]
+        far = float(np.hypot(*way))
+        along = way / far
+        across = np.array([along[1], -along[0]])
+        steps = int(round(far))
+        sides = ((rim[a], -along, 0.0), (rim[b], along, aside))
+        tips = [cell(start, along, 0, column + shift, across) for start, _, shift in sides for column in columns]
+        tips = [(y, x) for y, x in tips if 0 <= y < h and 0 <= x < w]
+        if any(ended[y, x] for y, x in tips):
+            continue
+        need = int(np.clip(round(far / 3), least, back))
+        cells, clash, fresh, outside = [], 0, 0, []
+        for column, *look in sorted(looks, key=lambda entry: abs(entry[0])):
+            usual = []                                                # per side: the cell behind the rim that is most like the line's usual look there
+            for (start, heading, shift), colour in zip(sides, look):
+                row = [cell(start, heading, step, column + shift, across) for step in range(1, need + 1)]
+                row = [(y, x) for y, x in row if 0 <= y < h and 0 <= x < w and art[y, x] and np.abs(rgb[y, x] - colour).max() <= same]
+                usual.append(row[int(np.argmin([np.abs(rgb[y, x] - colour).max() for y, x in row]))] if row else None)
+                offset, missed = column + shift, 0
+                for step in range(-2, 72 if row else -2):            # the line where it comes from, followed outwards from the rim
+                    near = [(by, cell(start, heading, step, offset + by, across)) for by in (0, -1, 1)]
+                    near = [(by, (y, x)) for by, (y, x) in near if 0 <= y < h and 0 <= x < w and art[y, x] and np.abs(rgb[y, x] - rgb[usual[-1]]).max() <= same]
+                    outside += [place for _, place in near[:1]]         # one cell a step: what lies beside it is not the line
+                    missed = 0 if near else missed + 1
+                    if step > 2 and missed > 3:
+                        break                                         # it ends here; up to three cells that a slanted line skips are no end
+                    if step > 2 and near and near[0][0]:
+                        offset += near[0][0]                          # it has moved a column aside: go with it
+            for step in range(-half, steps + half + 1):               # a little beyond both ends: a line beside the rim cell enters the hole before it
+                y, x = cell(rim[a], along, step, column + aside * min(1, max(0, step / steps)), across)
+                if not (0 <= y < h and 0 <= x < w) or not hole[y, x]:
+                    continue
+                if step <= steps / 2:                                 # each half takes its cells from its own side, mirrored at the rim
+                    back_by, (start, heading, shift), typical = (step - 1) % need + 1, sides[0], usual[0]
+                else:
+                    back_by, (start, heading, shift), typical = (steps - step - 1) % need + 1, sides[1], usual[1]
+                if typical is None:
+                    continue
+                sy, sx = cell(start, heading, back_by, column + shift, across)
+                if not (0 <= sy < h and 0 <= sx < w) or not art[sy, sx] or np.abs(rgb[sy, sx] - rgb[typical]).max() > same:
+                    sy, sx = typical                                  # not the line there (another one crosses, or this one takes a step): the usual cell instead
+                if drawn[y, x]:
+                    clash += int(np.abs(out[y, x, :3].astype(int) - source[sy, sx, :3]).max() > 2 * same)
+                else:
+                    clash += int(flank[y, x])
+                    fresh += int(not flank[y, x])
+                    cells.append((y, x, sy, sx))
+        if not fresh or clash > 0.15 * (fresh + clash):               # it contradicts what better lines have put there
+            continue
+        for y, x, sy, sx in cells:
+            if not drawn[y, x]:
+                out[y, x] = source[sy, sx]
+                drawn[y, x] = lines[y, x] = True
+        for y, x in outside:
+            lines[y, x] = True
+        for column in (min(columns) - 1, max(columns) + 1):
+            for step in range(-half, steps + half + 1):
+                y, x = cell(rim[a], along, step, column + aside * min(1, max(0, step / steps)), across)
+                if 0 <= y < h and 0 <= x < w and hole[y, x]:
+                    flank[y, x] = True
+        for y, x in tips:
+            ended[max(0, y - 1):y + 2, max(0, x - 1):x + 2] = True
+    return lines
+
+
+def _carry_on(out, hole, lines=None, radius=8, reach=48, fit=10.0, far=0.1):
     """Carry a pattern on into a hole, in place, and return the cells that are still open.
 
     The cell on the rim of the hole where a line of the picture runs most strongly into it comes first. The
@@ -190,6 +412,13 @@ def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
     when a third of the patch is known, and when the known half has a pattern at all: on calm ground a copied
     patch would only bring along whatever lone detail lies in it. Cells for which no patch is good enough stay
     open.
+
+    `lines` are the cells of lines that were drawn through the hole before, in the hole and outside it. They
+    stay as they are, and a patch is only taken when it agrees with them: it shows the line where it would lie
+    on one, by the same measure as with the known half, and it brings none of these lines to a cell that has
+    none, or a skirting would come back a second time further down. Apart from that the drawn cells are open
+    cells like the others: a line through the hole says where it runs, not what lies beside it, so it is no
+    rim to go on from and makes no patch known.
     """
     h, w = hole.shape
     k, r = 2 * radius + 1, radius
@@ -203,6 +432,9 @@ def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
     inside[r:tall - r, r:wide - r] = True
     todo = np.zeros((tall, wide), dtype=bool)
     todo[r:tall - r, r:wide - r] = hole[top:bottom, left:right]
+    ruled = np.zeros((tall, wide), dtype=bool)
+    if lines is not None:
+        ruled[r:tall - r, r:wide - r] = lines[top:bottom, left:right]
     cy, cx = np.nonzero(np.lib.stride_tricks.sliding_window_view(inside & ~todo, (k, k)).all(axis=(2, 3)))     # patches known in full, by their top left corner
     most = max(500, 48_000_000 // (k * k * 4 * 8))                    # as many as fit into some 50 MB
     if len(cy) > most:
@@ -210,6 +442,7 @@ def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
         cy, cx = cy[keep], cx[keep]
     if not len(cy):
         return hole.copy()
+    brings = np.lib.stride_tricks.sliding_window_view(ruled, (k, k))[cy, cx].reshape(len(cy), k * k).astype(np.float32) if ruled.any() else None
     stack = np.lib.stride_tricks.sliding_window_view(art, (k, k), axis=(0, 1))[cy, cx]
     stack = np.ascontiguousarray(stack.transpose(0, 2, 3, 1).reshape(len(cy), k * k * 4))
     squares = stack * stack
@@ -244,16 +477,25 @@ def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
         if have.mean() < 1 / 3 or not patterned:
             skipped[y, x] = True
             continue
-        weight = np.repeat(have, 4).astype(np.float32)
-        target = art[here].reshape(-1) * weight
-        apart = (squares @ weight - 2 * (stack @ target) + float(target @ target)) / float(weight.sum())   # mean squared difference per value
-        pick = int(np.argmin(apart + far * ((cy + r - y) ** 2 + (cx + r - x) ** 2)))
-        if apart[pick] > fit * fit:
+        def apart(cells):
+            """Per known patch, its mean squared difference per value to this patch, over these cells of it."""
+            weight = np.repeat(cells, 4).astype(np.float32)
+            target = art[here].reshape(-1) * weight
+            return (squares @ weight - 2 * (stack @ target) + float(target @ target)) / float(weight.sum())
+
+        ground = apart(have)
+        line = (ruled[here] & todo[here]).reshape(k * k)             # drawn lines the patch would lie on
+        if line.any():
+            ground = np.where(apart(line) > fit * fit, np.inf, ground)     # a patch that does not agree with them is none
+        if brings is not None:                                       # nor is one that would bring such a line to where the place has none
+            ground = np.where(brings @ (todo[here] & ~ruled[here]).reshape(k * k).astype(np.float32) > 0, np.inf, ground)
+        pick = int(np.argmin(ground + far * ((cy + r - y) ** 2 + (cx + r - x) ** 2)))
+        if ground[pick] > fit * fit:
             skipped[y, x] = True
             continue
-        open_ = todo[here]
+        open_ = todo[here] & ~ruled[here]
         art[here][open_] = stack[pick].reshape(k, k, 4)[open_]
-        sure[here][open_] = trust[first]
+        sure[here][todo[here]] = trust[first]
         todo[here] = False
         skipped[max(0, y - k):y + k + 1, max(0, x - k):x + k + 1] = False     # with more known around them, their turn may come
     filled = hole[top:bottom, left:right] & ~todo[r:tall - r, r:wide - r]
@@ -263,7 +505,7 @@ def _carry_on(out, hole, radius=8, reach=48, fit=10.0, far=0.1):
     return left_open
 
 
-def _common(out, hole, window=3):
+def _common(out, hole, window=3, walls=None):
     """Fill a hole cell by cell, in place, with the colours that are common around it.
 
     Each cell of the hole looks at the nearest cell outside. If that cell is empty, the cell stays empty, so
@@ -271,22 +513,33 @@ def _common(out, hole, window=3):
     the colours that are common around that cell, by their shares: the grain of the surroundings carries on,
     and a lone highlight that passes close by is a minority and stays out. A cell that then stands out from
     the middle tone around it takes a colour nearer to that tone.
+
+    `walls` are lines that were drawn through the hole before, in the hole and outside it. They are not the
+    ground: no cell takes its colours from one. And the ground does not spread across them: each side
+    of a line is filled from its own side, in the colours that are common on that side. Only a place that
+    lines close in on all sides is filled from beyond them.
     """
     image = out.copy()
     h, w = hole.shape
+    walls = np.zeros_like(hole) if walls is None else walls
     # the nearest cell outside, for every cell: what is known spreads inwards ring by ring
     ys, xs = np.indices((h, w))
-    known = ~hole
+    known = ~hole & ~walls
     near_y, near_x = np.where(known, ys, -1), np.where(known, xs, -1)
-    while not known.all():
-        grown, grown_y, grown_x = known.copy(), near_y.copy(), near_x.copy()
-        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
-            here = (slice(max(0, -dy), h + min(0, -dy)), slice(max(0, -dx), w + min(0, -dx)))
-            there = (slice(max(0, dy), h + min(0, dy)), slice(max(0, dx), w + min(0, dx)))
-            take = known[there] & ~grown[here]
-            grown_y[here][take], grown_x[here][take] = near_y[there][take], near_x[there][take]
-            grown[here] |= take
-        known, near_y, near_x = grown, grown_y, grown_x
+    for shut in (walls, np.zeros_like(hole)):                         # around the walls first, then through them
+        while not known.all():
+            grown, grown_y, grown_x = known.copy(), near_y.copy(), near_x.copy()
+            for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+                here = (slice(max(0, -dy), h + min(0, -dy)), slice(max(0, -dx), w + min(0, -dx)))
+                there = (slice(max(0, dy), h + min(0, dy)), slice(max(0, dx), w + min(0, dx)))
+                take = known[there] & ~grown[here] & ~shut[here]
+                if dy and dx:                                          # and not between two cells of a slanted line
+                    take &= ~(shut[(there[0], here[1])] & shut[(here[0], there[1])])
+                grown_y[here][take], grown_x[here][take] = near_y[there][take], near_x[there][take]
+                grown[here] |= take
+            if (grown == known).all():
+                break
+            known, near_y, near_x = grown, grown_y, grown_x
     code = image[..., 0].astype(np.int64) << 24 | image[..., 1].astype(np.int64) << 16 | image[..., 2].astype(np.int64) << 8 | image[..., 3]
     art = ~hole & (image[..., 3] > 0)
     cells = np.flatnonzero(hole)
@@ -298,7 +551,17 @@ def _common(out, hole, window=3):
         if not art[y, x]:
             continue                                               # empty ground stays empty
         box = (slice(max(0, y - window), y + window + 1), slice(max(0, x - window), x + window + 1))
-        colours, counts = np.unique(code[box][art[box]], return_counts=True)
+        around = art[box]
+        if walls[box].any():                                       # what lies beyond a line is another ground
+            side = np.zeros_like(around)
+            side[y - box[0].start, x - box[1].start] = True
+            while True:
+                grown = side | _neighbours(side) & ~walls[box]
+                if (grown == side).all():
+                    break
+                side = grown
+            around = around & side
+        colours, counts = np.unique(code[box][around], return_counts=True)
         keep = counts >= min(counts.max(), counts.sum() * 0.3)     # when nothing holds that much: the most common one
         shares = np.cumsum(counts[keep] / counts[keep].sum())
         mine = origin == spot

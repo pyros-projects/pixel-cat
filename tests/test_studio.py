@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from pixel_cat import studio
+from pixel_cat import edits, studio
 from pixel_cat.jobs import execute
 from pixel_cat.project import Project, png_bytes
 
@@ -584,6 +584,97 @@ class Joints(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "is shown at 50 %, so a filling under the part would show through"):
             faded.apply({"op": "part", "layer": 0, "rect": [20, 10, 20, 20], "fill": True})
         self.assertEqual(len(faded.layers), 1)
+
+    def test_a_filling_draws_straight_lines_through(self):
+        near = lambda mask: edits._neighbours(mask, corners=True) | mask                   # noqa: E731
+        ys, xs = np.indices((72, 96))
+        # a floor of large tiles seen at a slant, with a crate where its joints cross: no place looks like the one under it
+        joint = (58, 44, 40, 255)
+        joints = xs == np.rint(50 + 0.4 * (ys - 36)).astype(int)
+        for start, rise in ((30, 0.25), (42, 0.21)):
+            joints |= ys == np.rint(start + rise * (xs - 48)).astype(int)
+        floor = np.zeros((72, 96, 4), dtype=np.uint8)
+        floor[...] = (168, 138, 104, 255)
+        floor[joints] = joint
+        crate = floor.copy()
+        crate[22:50, 34:64] = (60, 90, 160, 255)
+        under = np.zeros((72, 96), dtype=bool)
+        under[22:50, 34:64] = True
+        p = Project.from_frames([crate], [100])
+        p.apply({"op": "part", "layer": 0, "rect": [34, 22, 30, 28], "fill": True})
+        below = p.layers[0]["cels"][0]
+        drawn = (below == joint).all(axis=2)
+        self.assertTrue(near(drawn)[joints & under].all())                                 # every joint goes on under the crate, a cell aside at most
+        self.assertFalse((drawn & under & ~near(joints)).any())                            # and no line is there that the floor does not have
+        self.assertTrue((below[under & ~drawn] == (168, 138, 104, 255)).all())             # around them the plain floor
+        # a wall above a floor, each with a grain of its own, and a dark skirting between them that rises to the right
+        rng = np.random.default_rng(4)
+        skirting = ys == np.rint(40 - (xs - 48) / 3).astype(int)
+        wall = np.array([(150, 118, 86), (160, 126, 92)], dtype=np.uint8)[rng.integers(0, 2, (72, 96))]
+        tiles = np.array([(84, 110, 150), (90, 118, 160)], dtype=np.uint8)[rng.integers(0, 2, (72, 96))]
+        room = np.dstack([np.where((ys < 40 - (xs - 48) / 3)[..., None], wall, tiles), np.full((72, 96), 255, dtype=np.uint8)])
+        room[skirting] = (40, 30, 34, 255)
+        chest = room.copy()
+        chest[26:54, 36:62] = (200, 60, 60, 255)
+        under[...] = False
+        under[26:54, 36:62] = True
+        q = Project.from_frames([chest], [100])
+        q.apply({"op": "part", "layer": 0, "rect": [36, 26, 26, 28], "fill": True})
+        below = q.layers[0]["cels"][0]
+        drawn = (below == (40, 30, 34, 255)).all(axis=2)
+        self.assertTrue(near(drawn)[skirting & under].all())                               # the skirting runs through, a cell aside at most
+        self.assertFalse((drawn & under & ~near(skirting)).any())
+        blue = below[..., 2] > below[..., 0]
+        above = ys < 40 - (xs - 48) / 3
+        self.assertFalse((blue & above & under & ~near(skirting)).any())                   # no floor on the wall
+        self.assertFalse((~blue & ~above & under & ~near(skirting)).any())                 # and no wall on the floor
+        # a line that shows on one side only and a line that bends are not drawn from rim to rim: this is for what both sides show
+        lone = np.zeros((72, 96, 4), dtype=np.uint8)
+        lone[...] = (168, 138, 104, 255)
+        lone[30, :44] = joint                                                              # it ends under the piece
+        lone[(np.abs(np.hypot(ys - 80, xs - 70) - 34) < 0.6) & (xs > 44)] = joint          # and this one bends under it
+        under[...] = False
+        under[20:54, 34:66] = True
+        lone[under] = 0
+        self.assertFalse(edits._lines(lone, under).any())
+
+    def test_a_copied_patch_brings_no_line_that_was_drawn_through(self):
+        # a wall above a floor with joints, a skirting between them, and a large piece in front of all three:
+        # the floor has a pattern to copy, and no patch of it may bring the wall and its skirting further down
+        near = lambda mask: edits._neighbours(mask, corners=True) | mask                   # noqa: E731
+        ys, xs = np.indices((108, 160))
+        rng = np.random.default_rng(1)
+        scene = np.array([(150, 118, 86), (160, 126, 92)], dtype=np.uint8)[rng.integers(0, 2, (108, 160))]
+        floor = ys > 60 + (xs - 80) / 6
+        scene[floor] = np.array([(84, 110, 150), (90, 118, 160)], dtype=np.uint8)[rng.integers(0, 2, (108, 160))][floor]
+        for k in range(-6, 14):
+            scene[(xs == np.rint(k * 26 + 0.5 * (ys - 60)).astype(int)) & floor] = (50, 70, 100)
+        skirting = ys == np.rint(60 + (xs - 80) / 6).astype(int)
+        scene[skirting] = (40, 30, 34)
+        room = np.dstack([scene, np.full((108, 160), 255, dtype=np.uint8)])
+        wardrobe = room.copy()
+        wardrobe[14:92, 42:112] = (200, 60, 60, 255)
+        under = np.zeros((108, 160), dtype=bool)
+        under[14:92, 42:112] = True
+        p = Project.from_frames([wardrobe], [100])
+        p.apply({"op": "part", "layer": 0, "rect": [42, 14, 70, 78], "fill": True})
+        below = p.layers[0]["cels"][0]
+        drawn = (below == (40, 30, 34, 255)).all(axis=2)
+        self.assertTrue(near(drawn)[skirting & under].all())                               # the skirting runs through
+        self.assertFalse((drawn & under & ~near(skirting)).any())                          # once
+        blue = below[..., 2].astype(int) > below[..., 0]
+        self.assertFalse((~blue & floor & under & ~near(skirting)).any())                  # and there is no wall below it
+        # for that a drawn line is known outside the place too: it is followed outwards, past the cells a slanted line skips
+        for slope in (1 / 3, 1 / 2):
+            line = ys == np.rint(54 + (xs - 80) * slope).astype(int)
+            plain = np.zeros((108, 160, 4), dtype=np.uint8)
+            plain[...] = (168, 138, 104, 255)
+            plain[line] = (58, 44, 40, 255)
+            hole = (np.abs(ys - 54) < 20) & (np.abs(xs - 80) < 20)
+            plain[hole] = 0
+            known = edits._lines(plain, hole) & ~hole
+            self.assertGreater(int((known & line).sum()), 0.8 * int((line & ~hole & (np.abs(xs - 80) < 68)).sum()))
+            self.assertFalse((known & ~line).any())
 
     def test_baking_turns_the_motion_into_plain_frames(self):
         p = self.arm()
