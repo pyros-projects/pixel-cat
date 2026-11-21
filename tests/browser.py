@@ -186,13 +186,24 @@ class Browser:
         self._mouse("mousePressed", x, y, True)
         self._mouse("mouseReleased", x, y)
 
-    def drag(self, start, end, steps=6):
-        self._mouse("mouseMoved", *start)
-        self._mouse("mousePressed", *start, True)
+    def down(self, x, y):
+        """Move the pointer there and hold the button down."""
+        self._mouse("mouseMoved", x, y)
+        self._mouse("mousePressed", x, y, True)
+
+    def pull(self, start, end, steps=6):
+        """With the button held, move from one place to another."""
         for step in range(1, steps + 1):
             self.ask("Input.dispatchMouseEvent", type="mouseMoved", x=start[0] + (end[0] - start[0]) * step / steps,
                      y=start[1] + (end[1] - start[1]) * step / steps, button="left", buttons=1, pointerType="mouse")
-        self._mouse("mouseReleased", *end)
+
+    def up(self, x, y):
+        self._mouse("mouseReleased", x, y)
+
+    def drag(self, start, end, steps=6):
+        self.down(*start)
+        self.pull(start, end, steps)
+        self.up(*end)
 
     def wheel(self, x, y, by):
         self._mouse("mouseMoved", x, y)

@@ -28,6 +28,9 @@ async function api(path, body) {
 }
 let line = Promise.resolve();
 function send(path, body) { const run = line.then(() => api(path, body)); line = run.catch(() => {}); return run; }
+// The layers as this page shows them, to go with every operation. A layer is named by its place in the list, and
+// the list here can be older than the project's: with this the server knows which layer is meant.
+const shown = () => ({ layers: S.doc.layers.map(layer => layer.id) });
 function toast(text, bad) {
   const t = $("toast"); t.textContent = text; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.hidden = true, bad ? 5000 : 2200);
@@ -56,7 +59,7 @@ async function load(flash) {
 }
 async function op(operation) {             // a change to the structure: send it, then take the result over
   drop(); if (S.proposal) endProposal(); S.pending++;
-  try { const done = await send("/api/op", { op: operation }); S.known = Math.max(S.known, done.rev); await load(); if (S.findings) runCheck(); return done; }
+  try { const done = await send("/api/op", { op: operation, ...shown() }); S.known = Math.max(S.known, done.rev); await load(); if (S.findings) runCheck(); return done; }
   catch (error) { fail(error); } finally { S.pending--; }
 }
 async function commit() {                  // the current cel changed under the pencil: send it as it is
@@ -72,7 +75,7 @@ async function commit() {                  // the current cel changed under the 
   mask.getContext("2d").putImageData(marks, 0, 0); HELD.set(cel, now); S.pending++;
   try {
     const everywhere = $("spread").checked && S.doc.frames.length > 1;
-    const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], where: mask.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: pickedFrames() || "all" } } : {}) } });
+    const done = await send("/api/op", { op: { op: "set-cel", layer, frame, png: cel.toDataURL("image/png").split(",")[1], where: mask.toDataURL("image/png").split(",")[1], ...(everywhere ? { spread: { frames: pickedFrames() || "all" } } : {}) }, ...shown() });
     S.known = Math.max(S.known, done.rev); S.meta.undo = (S.meta.undo || 0) + 1; S.meta.redo = 0; S.meta.last = [done.note, "you"]; chrome();
     if (everywhere || S.doc.locked || S.doc.layers[layer].joint) await load();   // other frames changed, the palette moved the colours, or a pose has to be drawn again
   } catch (error) { fail(error); await load(); } finally { S.pending--; }
@@ -417,7 +420,7 @@ async function setDown(area, [x, y], canvas) {   // a piece lifted from this cel
   const everywhere = $("spread").checked && S.doc.frames.length > 1;
   S.pending++;
   try {
-    const done = await send("/api/op", { op: { op: "move", layer: S.layer, frame: S.frame, x, y, ...where, ...(everywhere ? { frames: pickedFrames() || "all" } : {}) } });
+    const done = await send("/api/op", { op: { op: "move", layer: S.layer, frame: S.frame, x, y, ...where, ...(everywhere ? { frames: pickedFrames() || "all" } : {}) }, ...shown() });
     S.known = Math.max(S.known, done.rev); await load();
   } catch (error) { fail(error); await load(); } finally { S.pending--; }
 }
@@ -721,7 +724,7 @@ function endProposal() { S.proposal = null; $("proposal").hidden = true; $("prop
 $("proposalFlip").onclick = () => { S.proposal.before = !S.proposal.before; $("proposalFlip").textContent = S.proposal.before ? "show after" : "show before"; draw(); };
 async function proposeOp(text, operation) {   // ask the server what an operation would do, and show that first
   drop();
-  let seen; try { seen = await api("/api/preview", { op: operation }); } catch (error) { return fail(error); }
+  let seen; try { seen = await api("/api/preview", { op: operation, ...shown() }); } catch (error) { return fail(error); }
   const after = {}; for (const [frame, png] of Object.entries(seen.after)) after[frame] = await decode(png);
   propose(text, seen.marks, () => op(operation));
   S.proposal.layer = seen.layer; S.proposal.after = after; S.proposal.before = false;
@@ -880,6 +883,9 @@ function listen() {
     const e = JSON.parse(event.data);
     if (e.type === "chat") showMessage(e.message);
     if (e.type === "agent") { S.meta.listening = e.listening; chrome(); }
+    // told where the project stands: if that is further than this page knows once its own work is done, something
+    // changed while nobody was listening, at the start or while the line was down
+    if (e.type === "hello") whenIdle(() => { if (e.rev > S.known) load(true).catch(fail); });
     if (e.type === "changed") {
       if (e.by === "you" && (S.pending > 0 || e.rev <= S.known)) return;
       if (e.by === "agent") agentChanged(e.note);

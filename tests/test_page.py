@@ -129,6 +129,44 @@ class Page(unittest.TestCase):
         self.browser.until("window.studio.doc.layers[1].name === 'Rail' && window.studio.pending === 0 ? 1 : 0")
         self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Rail")
 
+    def test_a_change_made_while_the_page_starts_is_not_missed(self):
+        self.browser.open("about:blank")                                            # the page of setUp is closed, so the next one to read is the new one
+        self.browser.until("window.studio ? 0 : 1")
+        self.room.change({"op": "add-layer", "name": "Rail"}, "you")
+        state = self.room.state
+
+        def old_news():                                                             # the page reads the project, and before it listens
+            answer = state()                                                        # an agent puts a layer below the others
+            self.room.state = state
+            self.room.change({"op": "add-layer", "name": "Agent layer", "at": 0}, "agent")
+            return answer
+
+        self.room.state = old_news
+        self.browser.open(self.url)
+        # told where the project stands as soon as it listens, the page looks again
+        self.browser.until("window.studio && window.studio.doc && window.studio.doc.layers.length === 3 && window.studio.pending === 0 ? 1 : 0")
+        self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Scene")   # in hand: the layer it showed in hand
+        self.browser.press(*self.cell(5, 5))
+        self.browser.until("window.studio.meta.undo === 3 ? 1 : 0")
+        project = self.saved()
+        self.assertEqual([(layer["name"], layer["cels"][0] is not None and tuple(layer["cels"][0][5, 5]) == (242, 166, 90, 255)) for layer in project.layers],
+                         [("Agent layer", False), ("Scene", True), ("Rail", False)])
+
+    def test_a_stroke_goes_to_its_layer_when_the_list_shifts_under_the_pencil(self):
+        start, end = self.cell(3, 3), self.cell(9, 3)
+        self.browser.down(*start)
+        self.browser.pull(start, end)                                               # the pencil is on the picture
+        self.room.change({"op": "add-layer", "name": "Came in below", "at": 0}, "agent")   # and an agent puts a layer below the one it draws on
+        self.browser.up(*end)
+        self.browser.until("window.studio.doc.layers.length === 2 && window.studio.pending === 0 && !window.studio.drawing ? 1 : 0")
+        project = self.saved()
+        below, scene = project.layers
+        self.assertEqual((below["name"], scene["name"]), ("Came in below", "Scene"))
+        self.assertTrue(below["cels"][0] is None or not below["cels"][0][..., 3].any())   # nothing on the layer that came in
+        drawn = (scene["cels"][0] != self.scene).any(axis=2)
+        self.assertEqual({(int(x), int(y)) for y, x in np.argwhere(drawn)}, {(x, 3) for x in range(3, 10)})   # the stroke is on the layer it was drawn on
+        self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Scene")
+
     def test_a_panel_takes_its_own_presses(self):
         self.browser.press(*self.spot("#tidy"))
         self.browser.until("!document.getElementById('cleanup').hidden ? 1 : 0")

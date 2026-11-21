@@ -796,6 +796,26 @@ class Studios(unittest.TestCase):
         self.call("/api/redo", {})
         self.assertTrue(Project.load(self.folder / "s.pixelcat").composite(0)[..., 3].any())
 
+    def test_a_layer_is_the_one_its_sender_sees_and_a_listener_hears_where_the_project_stands(self):
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Rail"}})
+        seen = [layer["id"] for layer in self.call("/api/state")["doc"]["layers"]]         # a page reads the project: two layers
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Came in below", "at": 0}, "by": "agent"})
+        # the page has not heard of it and draws on what it shows as layer 1, the rail; it says which layers it sees
+        self.call("/api/op", {"op": {"op": "draw", "layer": 1, "color": "#ff0000", "points": [[1, 1]]}, "layers": seen})
+        project = Project.load(self.folder / "s.pixelcat")
+        self.assertEqual([(layer["name"], layer["cels"][0] is not None) for layer in project.layers], [("Came in below", False), ("Layer 1", False), ("Rail", True)])
+        marks = self.call("/api/preview", {"op": {"op": "draw", "layer": 0, "color": "#00ff00", "points": [[2, 2]]}, "layers": seen})
+        self.assertEqual(marks["layer"], 1)                                               # what it would do is asked the same way
+        self.call("/api/op", {"op": {"op": "remove-layer", "layer": 2}, "by": "agent"})   # the rail goes
+        with self.assertRaisesRegex(ValueError, "That layer is no longer there"):
+            self.call("/api/op", {"op": {"op": "draw", "layer": 1, "color": "#ff0000", "points": [[3, 3]]}, "layers": seen})
+        without = self.call("/api/op", {"op": {"op": "draw", "layer": 1, "color": "#0000ff", "points": [[4, 4]]}})
+        self.assertEqual(without["note"], "drew on layer 1, frame 0")                     # a sender that names no list is taken at its word
+        # whoever starts to listen is told first where the project stands: what changed before, it did not hear
+        with urllib.request.urlopen(self.url + "/api/events", timeout=5) as stream:
+            lines = [stream.readline().decode().strip() for _ in range(3)]
+        self.assertEqual(json.loads(lines[2].removeprefix("data: ")), {"type": "hello", "rev": self.call("/api/state")["meta"]["rev"]})
+
     def test_a_frame_becomes_a_loop_over_a_painted_area_and_undo_brings_it_back(self):
         self.call("/api/op", {"op": {"op": "resize", "width": 24, "height": 24}})
         self.call("/api/op", {"op": {"op": "draw", "color": "#2060c0", "rect": [0, 0, 24, 24]}})

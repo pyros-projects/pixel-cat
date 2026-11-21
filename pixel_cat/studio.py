@@ -69,8 +69,26 @@ class Studio:
 
     # ------------------------------------------------------------ the project
 
-    def change(self, op, by):
+    def meant(self, op, seen):
+        """An operation as its sender meant it. A page names a layer by its place in the list it shows, and that
+        list can be older than the project: someone else may have added, removed or moved a layer since. `seen`
+        is the sender's list of layer ids, from the bottom up. The places in `layer` and `parent` are read from
+        it and turned into the places those layers have now."""
+        now = [layer["id"] for layer in self.project.layers]
+        if not isinstance(seen, list) or seen == now or not isinstance(op, dict):
+            return op
+        meant = dict(op)
+        for key in ("layer", "parent"):
+            place = op.get(key)
+            if isinstance(place, int) and not isinstance(place, bool) and 0 <= place < len(seen):
+                if seen[place] not in now:
+                    raise ValueError("That layer is no longer there: the project was changed in the meantime")
+                meant[key] = now.index(seen[place])
+        return meant
+
+    def change(self, op, by, seen=None):
         with self.lock:
+            op = self.meant(op, seen)
             before = self.project.snapshot()
             try:
                 note = self.project.apply(op)
@@ -88,10 +106,11 @@ class Studio:
         self.publish({"type": "changed", "rev": self.rev, "by": by, "note": note})
         return {"rev": self.rev, "note": note}
 
-    def preview(self, op):
+    def preview(self, op, seen=None):
         """What an operation would do, without doing it: per frame the cells that would change, and the
         changed cels of its layer."""
         with self.lock:
+            op = self.meant(op, seen)
             trial = self.project.snapshot()
             note = trial.apply(op)
             layer = int(op.get("layer", 0))
@@ -347,11 +366,11 @@ def handler_for(studio):
                 data = json.loads(raw or b"{}")
                 by = "agent" if data.get("by") == "agent" else "you"
                 if url.path == "/api/op":
-                    return self.send(200, studio.change(data["op"], by))
+                    return self.send(200, studio.change(data["op"], by, data.get("layers")))
                 if url.path == "/api/loop":
                     return self.send(200, studio.make_loop(data["loop"], data.get("frame", 0), by))
                 if url.path == "/api/preview":
-                    return self.send(200, studio.preview(data["op"]))
+                    return self.send(200, studio.preview(data["op"], data.get("layers")))
                 if url.path == "/api/undo":
                     return self.send(200, studio.step(True, by))
                 if url.path == "/api/redo":
@@ -387,7 +406,8 @@ def handler_for(studio):
             mine = queue.Queue()
             studio.listeners.append(mine)
             try:
-                self.wfile.write(b": connected\n\n")
+                # first where the project stands: what changed before this listener was there, it has not heard
+                self.wfile.write(f": connected\n\ndata: {json.dumps({'type': 'hello', 'rev': studio.rev})}\n\n".encode())
                 self.wfile.flush()
                 while True:
                     try:
