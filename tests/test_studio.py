@@ -827,6 +827,12 @@ class Studios(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as refused:
             urllib.request.urlopen(request)
         self.assertEqual((refused.exception.code, json.loads(refused.exception.read())["again"]), (409, True))
+        # a browser says where a request comes from; a page of this studio also says its run. One that does not is a
+        # page loaded from an older studio, or another site's
+        request = urllib.request.Request(self.url + "/api/op", data=json.dumps({"op": draw}).encode(), headers={"Origin": self.url}, method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(request)
+        self.assertEqual((refused.exception.code, json.loads(refused.exception.read())["error"]), (409, "This page is older than the studio. Reload it."))
         self.assertEqual(self.call("/api/state")["meta"]["rev"], 0)                        # nothing was changed
         self.call("/api/op", {"op": draw, "run": run})                                     # the page of this run draws
         self.call("/api/op", {"op": draw, "by": "agent"})                                  # and whoever names no run is taken at its word
@@ -940,6 +946,62 @@ class Studios(unittest.TestCase):
         self.assertEqual(names(), ["New", "Came in", "Top", "Middle", "Between", "Layer 1"])
         with self.assertRaisesRegex(ValueError, "their ids, each one once"):               # a list that names a layer twice is no list of layers
             self.call("/api/op", {"op": {"op": "move-layer", "layer": 0, "to": 1}, "layers": [seen[0], seen[0]]})
+
+    def test_a_frame_is_the_one_its_sender_sees_and_no_frame_gets_the_id_of_one_that_is_gone(self):
+        ids = lambda: [frame["id"] for frame in self.call("/api/state")["doc"]["frames"]]   # noqa: E731
+        agent = lambda **op: self.call("/api/op", {"op": op, "by": "agent"})              # noqa: E731
+        drawn = lambda: [cel is not None for cel in Project.load(self.folder / "s.pixelcat").layers[0]["cels"]]   # noqa: E731
+        self.call("/api/op", {"op": {"op": "add-frame", "count": 2}})
+        seen = ids()                                                                       # a page reads the project: three frames
+        self.assertEqual(seen, ["F1", "F2", "F3"])
+        agent(op="add-frame", at=0)                                                        # an agent puts a frame in front of them
+        self.assertEqual(ids(), ["F4", "F1", "F2", "F3"])
+        self.call("/api/op", {"op": {"op": "draw", "frame": 1, "color": "#ff0000", "points": [[1, 1]]}, "frames": seen})
+        self.assertEqual(drawn(), [False, False, True, False])                             # the page's frame 1 is the third one now
+        self.call("/api/op", {"op": {"op": "draw", "frames": [0, 2], "color": "#00ff00", "points": [[2, 2]]}, "frames": seen})
+        self.assertEqual(drawn(), [False, True, True, True])                               # several frames are read the same way
+        self.call("/api/op", {"op": {"op": "add-frame", "at": 1, "copy": 0}, "frames": seen})   # a copy of the page's first frame, right behind it
+        self.assertEqual(ids(), ["F4", "F1", "F5", "F2", "F3"])                            # the copy is a frame of its own
+        self.assertEqual(drawn(), [False, True, True, True, True])
+        seen = ids()
+        agent(op="remove-frame", frame=0)                                                  # the agent takes its frame away again
+        self.call("/api/op", {"op": {"op": "move-frame", "frame": 4, "to": 2}, "frames": seen})   # the page moves its last frame behind its second
+        self.assertEqual(ids(), ["F1", "F3", "F5", "F2"])
+        with self.assertRaisesRegex(ValueError, "That frame is no longer there"):          # and cannot draw on the one that is gone
+            self.call("/api/op", {"op": {"op": "draw", "frame": 0, "color": "#0000ff", "points": [[3, 3]]}, "frames": seen})
+        self.call("/api/view", {"frame": 4, "layer": 0, "frames": seen})                   # what it has open: its last frame, the second one now
+        self.assertEqual(self.call("/api/look?as=json")["viewing"], {"frame": 1, "layer": 0, "layerName": "Layer 1"})
+        with self.assertRaisesRegex(ValueError, "`frames` is the list of the frames the sender sees"):
+            self.call("/api/op", {"op": {"op": "draw", "frame": 0, "color": "#0000ff", "points": [[3, 3]]}, "frames": ["F1", "F1"]})
+        seen = ids()                                                                       # F1, F3, F5, F2
+        agent(op="add-frame", at=2, copy=2)                                                # a copy of a frame, put in front of it:
+        self.assertEqual(ids(), ["F1", "F3", "F6", "F5", "F2"])                            # the frame keeps its id, the copy gets one of its own
+        self.call("/api/op", {"op": {"op": "move-frame", "frame": 2, "to": 2}, "frames": seen})   # a move that changes nothing as the page sees it
+        self.assertEqual(ids(), ["F1", "F3", "F6", "F5", "F2"])
+        agent(op="remove-frame", frame=2)
+        with self.assertRaisesRegex(ValueError, "A project has 1 to 256 frames"):          # a file with far too many frames is turned away before it is read
+            Project.from_json(dict(Project(4, 4).to_json(), frames=[{}] * 20000))
+        with self.assertRaisesRegex(ValueError, "Every frame and every layer of a project is an object"):
+            Project.from_json(dict(Project(4, 4).to_json(), frames=["a frame"]))
+        # no id twice: not after a frame has gone, not after undo, not after the file was written and read
+        self.call("/api/op", {"op": {"op": "remove-frame", "frame": 3}})
+        self.call("/api/op", {"op": {"op": "add-frame"}})
+        self.assertEqual(ids(), ["F1", "F3", "F5", "F7"])
+        self.call("/api/undo", {})
+        self.call("/api/op", {"op": {"op": "add-frame"}})
+        self.assertEqual(ids(), ["F1", "F3", "F5", "F8"])
+        again = Project.load(self.folder / "s.pixelcat")
+        again.apply({"op": "remove-frame", "frame": 3})
+        again.apply({"op": "add-frame"})
+        self.assertEqual([frame["id"] for frame in again.frames], ["F1", "F3", "F5", "F9"])
+        old = json.loads((self.folder / "s.pixelcat").read_text())                         # a file from before frames had ids
+        old.pop("next_frame")
+        for frame in old["frames"]:
+            frame.pop("id")
+        before = Project.from_json(old)
+        before.apply({"op": "add-frame"})
+        self.assertEqual([frame["id"] for frame in before.frames], ["F1", "F2", "F3", "F4", "F5"])
+        self.assertEqual([frame["duration"] for frame in before.frames], [120] * 5)
 
     def test_a_frame_becomes_a_loop_over_a_painted_area_and_undo_brings_it_back(self):
         self.call("/api/op", {"op": {"op": "resize", "width": 24, "height": 24}})

@@ -112,20 +112,20 @@ A project is one JSON file ending in `.pixelcat`:
 ```json
 {"format": "pixel-cat project", "version": 2, "width": 32, "height": 32,
  "palette": ["#101018", "#f2a65a"],
- "frames": [{"duration": 120}, {"duration": 120}, {"duration": 120}],
+ "frames": [{"id": "F1", "duration": 120}, {"id": "F2", "duration": 120}, {"id": "F3", "duration": 120}],
  "pictures": ["<PNG, base64>", "<PNG, base64>"],
  "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
              "cels": [0, 0, null]},
             {"id": "L2", "name": "Ink", "visible": true, "locked": false, "opacity": 1,
              "cels": [1, 1, 1]}],
- "next_layer": 3}
+ "next_layer": 3, "next_frame": 4}
 ```
 
 Layers are listed from the bottom up. Every layer has one cel per frame; an empty cel is `null`, a filled one is the number of its picture in `pictures`, counted from 0. A picture is a PNG of the project's size. A drawing that is held over several frames, or shows on several layers, is stored once, so a long hold costs nothing. A project has up to 256 frames, 32 layers and 2048 cells per side.
 
 Files of version 1 carried the PNG in the cel itself (`"cels": ["<PNG, base64>", null]`). They still open, and are saved in the new form.
 
-A layer keeps its `id` for good, and no id is given twice: `next_layer` is the number the next new layer gets, also after a layer has gone. So whoever still shows an older list of layers cannot take a new layer for one that is gone. A file without `next_layer` opens as well; the next layer then gets the number after the highest one in the file.
+A layer and a frame keep their `id` for good, and no id is given twice: `next_layer` and `next_frame` are the numbers the next new layer and frame get, also after one has gone. So whoever still shows an older list cannot take a new layer or frame for one that is gone. A file without these counts, or without ids on its frames, opens as well; the count then goes on after the highest number in the file.
 
 A layer with a joint carries it in the file. Its cels are the drawing at rest; `keys` has one entry per frame, `null` where the frame lies between keys, and `parent` is the `id` of the layer it hangs on:
 

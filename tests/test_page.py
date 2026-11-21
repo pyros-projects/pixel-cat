@@ -191,6 +191,20 @@ class Page(unittest.TestCase):
         self.browser.until("window.studio.doc.layers.length === 2 && window.studio.pending === 0 ? 1 : 0")
         self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Scene")
 
+    def test_a_stroke_goes_to_its_frame_when_a_frame_comes_in_under_the_pencil(self):
+        start, end = self.cell(3, 3), self.cell(9, 3)
+        self.browser.down(*start)
+        self.browser.pull(start, end)                                               # the pencil is on the first frame
+        self.room.change({"op": "add-frame", "at": 0}, "agent")                     # and an agent puts a frame in front of it
+        self.browser.up(*end)
+        self.browser.until("window.studio.doc.frames.length === 3 && window.studio.pending === 0 && !window.studio.drawing ? 1 : 0")
+        project = self.saved()
+        self.assertIsNone(project.layers[0]["cels"][0])                             # nothing on the frame that came in
+        drawn = (project.cel(0, 1) != self.scene).any(axis=2)
+        self.assertEqual({(int(x), int(y)) for y, x in np.argwhere(drawn)}, {(x, 3) for x in range(3, 10)})   # the stroke is on the frame it was drawn on
+        self.assertTrue((project.cel(0, 2) == self.scene).all())
+        self.assertEqual(self.browser.run("window.studio.frame"), 1)                # and that frame is still the one in hand
+
     def test_a_panel_takes_its_own_presses(self):
         self.browser.press(*self.spot("#tidy"))
         self.browser.until("!document.getElementById('cleanup').hidden ? 1 : 0")

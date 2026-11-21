@@ -2,19 +2,20 @@
 
     {"format": "pixel-cat project", "version": 2, "width": 64, "height": 64,
      "palette": ["#101018", ...],
-     "frames": [{"duration": 120}, ...],
+     "frames": [{"id": "F1", "duration": 120}, ...],
      "pictures": ["<PNG, base64>", ...],
      "layers": [{"id": "L1", "name": "Colour", "visible": true, "locked": false, "opacity": 1,
                  "cels": [0, 0, null, 1, ...]}],
-     "next_layer": 2}
+     "next_layer": 2, "next_frame": 5}
 
 Layers are listed from the bottom up. Every layer holds one cel per frame; an empty cel is null, a filled one
 is the number of its picture in "pictures". A picture is a PNG of the project's size, so any tool that reads
 JSON and PNG can read a project. A drawing that is held over several frames, or shows on several layers, is
 stored once. Files of version 1 held the PNG in the cel itself; they still open. A layer can carry a "joint":
-then its cels are the drawing at rest, and its keys turn and move it (see joints.py). A layer keeps its id for
-good and no id is given twice: "next_layer" is the number the next new layer gets, also after a layer has gone.
-A file without it opens as well; the next layer then gets the number after the highest one in the file.
+then its cels are the drawing at rest, and its keys turn and move it (see joints.py). A layer and a frame keep
+their ids for good and no id is given twice: "next_layer" and "next_frame" are the numbers the next new layer
+and frame get, also after one has gone. A file without them, or without ids on its frames, opens as well; the
+count then goes on after the highest number in the file.
 
 Everything that changes a project goes through `apply`, one small JSON operation at a time. The studio's
 browser, an agent and a script all speak the same operations.
@@ -60,9 +61,9 @@ def colour(value):
     return edits.rgb(value) + [255]
 
 
-def _number(name):
-    """The number in a layer id like "L7"; 0 for any other name."""
-    return int(name[1:]) if isinstance(name, str) and name[:1] == "L" and name[1:].isdecimal() and len(name) <= 10 else 0
+def _number(name, letter="L"):
+    """The number in an id like "L7" or "F7"; 0 for any other name."""
+    return int(name[1:]) if isinstance(name, str) and name[:1] == letter and name[1:].isdecimal() and len(name) <= 10 else 0
 
 
 class Project:
@@ -70,7 +71,7 @@ class Project:
         integer(width, 1, LIMITS["side"], "width")
         integer(height, 1, LIMITS["side"], "height")
         self.width, self.height = width, height
-        self.frames = [{"duration": 120}]
+        self.frames = [self._frame()]
         self.layers = [self._layer("Layer 1")]
         self.palette = []
         self.locked = False              # a locked palette: whatever is drawn takes the nearest palette colour
@@ -89,24 +90,48 @@ class Project:
         self.next_layer = number + 1
         return f"L{number}"
 
-    def renumber(self, first):
-        """Give every layer a new id, counted on from `first`; a joint stays on its parent. For a project that
-        takes the place of another one, whose ids may still stand in someone's list of layers."""
+    def renumber(self, first, frame=None):
+        """Give every layer a new id, counted on from `first`, and every frame one counted on from `frame`; a
+        joint stays on its parent. For a project that takes the place of another one, whose ids may still stand
+        in someone's list of layers and frames."""
         fresh = {layer["id"]: f"L{first + place}" for place, layer in enumerate(self.layers)}
         for layer in self.layers:
             layer["id"] = fresh[layer["id"]]
             if layer.get("joint") and layer["joint"]["parent"] is not None:
                 layer["joint"]["parent"] = fresh.get(layer["joint"]["parent"])
         self.next_layer = first + len(fresh)
+        if frame is not None:
+            self.frames = [dict(known, id=f"F{frame + place}") for place, known in enumerate(self.frames)]
+            self.next_frame = frame + len(self.frames)
         self._posed = {}
+
+    def _frame(self, duration=120):
+        """A new frame, with an id that no frame of this project has had before."""
+        taken = {frame.get("id") for frame in getattr(self, "frames", [])}
+        number = max([getattr(self, "next_frame", 1)] + [_number(name, "F") + 1 for name in taken])
+        while f"F{number}" in taken:
+            number += 1
+        self.next_frame = number + 1
+        return {"id": f"F{number}", "duration": duration}
 
     def _layer(self, name):
         return {"id": self._new_id(), "name": name, "visible": True, "locked": False, "opacity": 1.0, "cels": [None] * len(self.frames)}
 
-    def _order(self, order):
+    def _order(self, order, copies=()):
         """Rebuild the frames from a list of frame numbers; None stands for a new, empty frame. A number may
-        come twice: then the frame is copied, with its cels and keys."""
-        self.frames = [{"duration": 120} if f is None else dict(self.frames[f]) for f in order]
+        come twice: then the frame is copied, with its cels and keys. `copies` are the places in the new order
+        that hold the copies: each is a frame of its own, and the frame it was made from keeps its id wherever
+        the copy is put."""
+        copies, kept, frames = set(copies), set(), []
+        for place, f in enumerate(order):
+            if f is None:
+                frames.append(self._frame())
+            elif place in copies or f in kept:
+                frames.append(dict(self.frames[f], id=self._frame()["id"]))
+            else:
+                frames.append(dict(self.frames[f]))
+                kept.add(f)
+        self.frames = frames
         for layer in self.layers:
             layer["cels"] = [None if f is None else layer["cels"][f] for f in order]
             if layer.get("joint"):
@@ -161,7 +186,8 @@ class Project:
     def from_frames(cls, images, durations, name="Layer 1"):
         """A project with one layer from converted frames."""
         project = cls(images[0].shape[1], images[0].shape[0])
-        project.frames = [{"duration": int(d)} for d in durations]
+        project.frames, project.next_frame = [], 1
+        project.frames = [project._frame(int(d)) for d in durations]
         project.layers = [project._layer(name)]
         for index, image in enumerate(images):
             project.put(0, index, np.ascontiguousarray(image))
@@ -179,7 +205,7 @@ class Project:
                         for layer in self.layers]
         other.palette = list(self.palette)
         other.locked = self.locked
-        other.next_layer = self.next_layer
+        other.next_layer, other.next_frame = self.next_layer, self.next_frame
         other._posed = self._posed
         other._pngs = self._pngs
         return other
@@ -205,22 +231,32 @@ class Project:
         for gone in set(self._pngs) - set(placed):                    # what is no longer shown is not kept
             del self._pngs[gone]
         return {"format": FORMAT, "version": 2, "width": self.width, "height": self.height, "palette": self.palette,
-                "locked": self.locked, "frames": self.frames, "pictures": pictures, "layers": layers, "next_layer": self.next_layer}
+                "locked": self.locked, "frames": self.frames, "pictures": pictures, "layers": layers, "next_layer": self.next_layer,
+                "next_frame": self.next_frame}
 
     @classmethod
     def from_json(cls, data):
         if not isinstance(data, dict) or data.get("format") != FORMAT:
             raise ValueError("This is not a pixel-cat project")
         project = cls(data["width"], data["height"])
-        project.frames = [{"duration": integer(f.get("duration", 120), 10, 60000, "duration")} for f in data["frames"]]
-        if not 1 <= len(project.frames) <= LIMITS["frames"] or not 1 <= len(data["layers"]) <= LIMITS["layers"]:
+        whole = lambda value: value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value < 10 ** 9 else 1      # noqa: E731
+        if not isinstance(data.get("frames"), list) or not isinstance(data.get("layers"), list) \
+                or not 1 <= len(data["frames"]) <= LIMITS["frames"] or not 1 <= len(data["layers"]) <= LIMITS["layers"]:
             raise ValueError("A project has 1 to 256 frames and 1 to 32 layers")
+        if not all(isinstance(entry, dict) for entry in data["frames"] + data["layers"]):
+            raise ValueError("Every frame and every layer of a project is an object")
+        held, taken, project.frames = data["frames"], set(), []       # a frame keeps the id its file gives it, if that is one and its own
+        project.next_frame = max([whole(data.get("next_frame"))] + [_number(f.get("id"), "F") + 1 for f in held])
+        for f in held:
+            duration = integer(f.get("duration", 120), 10, 60000, "duration")
+            own = isinstance(f.get("id"), str) and f["id"] not in taken
+            project.frames.append({"id": f["id"], "duration": duration} if own else project._frame(duration))
+            taken.add(project.frames[-1]["id"])
         project.palette = [c for c in data.get("palette", []) if edits.rgb(c)]
         project.locked = bool(data.get("locked", False))
         project.layers = []
-        given = data.get("next_layer")                                # no id twice: the file says where the count stands, or its highest id does
-        project.next_layer = max([given if isinstance(given, int) and not isinstance(given, bool) and 1 <= given < 10 ** 9 else 1]
-                                 + [_number(layer.get("id")) + 1 for layer in data["layers"] if isinstance(layer, dict)])
+        # no id twice: the file says where the count stands, or its highest id does
+        project.next_layer = max([whole(data.get("next_layer"))] + [_number(layer.get("id")) + 1 for layer in data["layers"] if isinstance(layer, dict)])
         pictures, opened = data.get("pictures", []), {}
 
         def picture(entry):
@@ -456,7 +492,7 @@ class Project:
                 copies = [None] * integer(op.get("count", 1), 1, LIMITS["frames"], "count")
             if frames + len(copies) > LIMITS["frames"]:
                 raise ValueError("A project holds up to 256 frames")
-            self._order(list(range(at)) + copies + list(range(at, frames)))
+            self._order(list(range(at)) + copies + list(range(at, frames)), range(at, at + len(copies)))
             return f"added frame {at}" if len(copies) == 1 else f"added {len(copies)} frames at {at}"
         if kind == "remove-frame":
             keys(op, {"op", "frame", "frames"}, "remove-frame")
@@ -780,7 +816,7 @@ class Project:
             while len(self.frames) < at + len(images):
                 if len(self.frames) >= LIMITS["frames"]:
                     raise ValueError("A project holds up to 256 frames")
-                self.frames.append({"duration": 120})
+                self.frames.append(self._frame())
                 for layer in self.layers:
                     for track in self._tracks(layer):
                         track.append(None)

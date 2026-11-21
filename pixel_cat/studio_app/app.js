@@ -33,9 +33,9 @@ let line = Promise.resolve();
 function send(path, body) {              // one after the other; each goes out under the run it was made for, however long it waits
   const made = S.run, run = line.then(() => api(path, body, made)); line = run.catch(() => {}); return run;
 }
-// The layers as this page shows them, to go with every operation. A layer is named by its place in the list, and
-// the list here can be older than the project's: with this the server knows which layer is meant.
-const shown = () => ({ layers: S.doc.layers.map(layer => layer.id) });
+// The layers and frames as this page shows them, to go with every operation. Each is named by its place in its
+// list, and the lists here can be older than the project's: with this the server knows which ones are meant.
+const shown = () => ({ layers: S.doc.layers.map(layer => layer.id), frames: S.doc.frames.map(frame => frame.id) });
 function toast(text, bad) {
   const t = $("toast"); t.textContent = text; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => t.hidden = true, bad ? 5000 : 2200);
@@ -49,10 +49,12 @@ async function decode(data) {
 async function load(flash) {
   const state = await api("/api/state");
   const held = S.doc && S.doc.layers[S.layer] ? S.doc.layers[S.layer].id : null;   // the layer in hand stays in hand, wherever a change puts it in the list
+  const open = S.doc && S.doc.frames[S.frame] ? S.doc.frames[S.frame].id : null;   // and so does the frame
   S.doc = state.doc; S.meta = state.meta;
   if (state.meta.run !== S.run) { S.run = state.meta.run; S.known = state.meta.rev; }   // another run of the studio counts its changes from nothing
   else S.known = Math.max(S.known, state.meta.rev);
   const again = S.doc.layers.findIndex(layer => layer.id === held); if (again >= 0) S.layer = again;
+  const still = S.doc.frames.findIndex(frame => frame.id === open); if (still >= 0) S.frame = still;
   const pictures = await Promise.all(state.doc.pictures.map(decode));   // each picture is opened once; every cel gets a canvas of its own, because drawing changes it
   const own = n => { const c = blank(); c.getContext("2d").drawImage(pictures[n], 0, 0); return c; };
   S.cels = state.doc.layers.map(layer => layer.cels.map(c => c == null ? null : own(c)));
@@ -855,7 +857,7 @@ $("loopGo").onclick = async () => {
   drop(); S.paint = null; toast("Making the loop …"); S.pending++;
   const regions = S.regions.map(r => ({ kind: r.kind, amount: r.amount, ...(r.kind === "leaves" && r.shape ? { shape: r.shape } : {}), ...(r.mask.some(Boolean) ? { area: { cells: regionCells(r) } } : {}) }));
   try {
-    const done = await send("/api/loop", { frame: S.frame, loop: { seconds: +$("loopSeconds").value, fps: +$("loopFps").value, regions } });
+    const done = await send("/api/loop", { frame: S.frame, loop: { seconds: +$("loopSeconds").value, fps: +$("loopFps").value, regions }, ...shown() });
     S.known = Math.max(S.known, done.rev); S.regions = []; panel("loopPanel", false); S.frame = 0; S.layer = 0; await load(true); play();
   } catch (error) { fail(error); } finally { S.pending--; }
 };

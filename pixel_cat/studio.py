@@ -73,13 +73,21 @@ class Studio:
 
     def looking(self, view):
         """What the person has open, as a page reports it, the way it stands in the project now. The page names
-        its layer by the place in the list it shows and sends that list along as `layers`; an agent reads the
-        place the layer has now, with its name, or no layer at all if it is gone."""
+        its layer and its frame by their places in the lists it shows and sends those lists along as `layers`
+        and `frames`; an agent reads the places they have now, the layer with its name, or none at all for one
+        that is gone."""
         if not isinstance(view, dict):
             raise ValueError("What the person has open is told as an object: frame, layer and so on")
-        seen = view.get("layers")
+        seen, frames = view.get("layers"), view.get("frames")
         view = {key: view[key] for key in ("frame", "layer", "selection", "color", "tool") if key in view}
         with self.lock:
+            place = view.get("frame")
+            if isinstance(frames, list) and isinstance(place, int) and not isinstance(place, bool) and 0 <= place < len(frames):
+                now = [frame["id"] for frame in self.project.frames]
+                if frames[place] in now:
+                    view["frame"] = now.index(frames[place])
+                else:
+                    del view["frame"]
             layers, place = self.project.layers, view.get("layer")
             if isinstance(seen, list) and isinstance(place, int) and not isinstance(place, bool) and 0 <= place < len(seen):
                 now = [layer["id"] for layer in layers]
@@ -94,59 +102,94 @@ class Studio:
     def put(self, project):
         """Another project takes the place of this one. Its layers get ids that were never given here, so that
         a list of the old layers, which someone may still show, names none of the new ones."""
-        project.renumber(self.project.next_layer)
+        project.renumber(self.project.next_layer, self.project.next_frame)
         self.project = project
 
-    def meant(self, op, seen):
-        """An operation as its sender meant it. A page names a layer by its place in the list it shows, and that
-        list can be older than the project: someone else may have added, removed or moved a layer since. `seen`
-        is the sender's list of layer ids, from the bottom up. The places in `layer` and `parent` are read from
-        it and turned into the places those layers have now. A place between layers (`to` when a layer is
-        moved, `at` when one is added) is kept between the same two layers, and a layer is merged down only
-        into the layer its sender saw below it."""
-        now = [layer["id"] for layer in self.project.layers]
-        if not isinstance(seen, list) or seen == now or not isinstance(op, dict):
+    def meant(self, op, seen, frames=None):
+        """An operation as its sender meant it. A page names a layer and a frame by their places in the lists
+        it shows, and those lists can be older than the project: someone else may have added, removed or moved
+        one since. `seen` is the sender's list of layer ids, from the bottom up, `frames` its list of frame
+        ids. The places in the operation are read from them and turned into the places those layers and frames
+        have now. A place between two (`to` when one is moved, `at` when one is added) is kept between the same
+        two, and a layer is merged down only into the layer its sender saw below it."""
+        if not isinstance(op, dict):
             return op
-        if not all(isinstance(name, str) for name in seen) or len(set(seen)) != len(seen):
-            raise ValueError("`layers` is the list of the layers the sender sees: their ids, each one once")
         gone = "is no longer there: the project was changed in the meantime"
         whole = lambda value: isinstance(value, int) and not isinstance(value, bool)      # noqa: E731
 
-        def between(old, place, new):
-            """The place in the list as it is now that lies right above the layer `place` lay right above; at
-            the very bottom, right below the layer it lay right below."""
+        def older(listed, now, what):
+            """Whether the sender's list is another one than the present; a list that is none is an error."""
+            if not isinstance(listed, list) or listed == now:
+                return False
+            if not all(isinstance(name, str) for name in listed) or len(set(listed)) != len(listed):
+                raise ValueError(f"`{what}s` is the list of the {what}s the sender sees: their ids, each one once")
+            return True
+
+        def between(old, place, new, what):
+            """The place in the list as it is now that lies right after the one `place` lay right after; at the
+            very start, right before the one it lay right before."""
             if place > 0:
                 if old[place - 1] not in new:
-                    raise ValueError(f"The layer below that place {gone}")
+                    raise ValueError(f"The {what} before that place {gone}")
                 return new.index(old[place - 1]) + 1
             return new.index(old[0]) if old and old[0] in new else 0
 
-        meant = dict(op)
-        for key in ("layer", "parent"):
-            place = op.get(key)
-            if whole(place) and 0 <= place < len(seen):
-                if seen[place] not in now:
-                    raise ValueError(f"That layer {gone}")
-                meant[key] = now.index(seen[place])
-        kind, place = op.get("op"), op.get("layer", 0)
-        if kind == "merge-down" and whole(place) and 0 <= place < len(seen):
-            if place == 0:
-                raise ValueError("The bottom layer has nothing below it")      # as the sender sees it; what lies below it now was not meant
-            if meant["layer"] == 0 or now[meant["layer"] - 1] != seen[place - 1]:
-                raise ValueError("Another layer lies below it now: the project was changed in the meantime. Look again, then merge.")
-        if kind == "move-layer" and whole(place) and 0 <= place < len(seen) and whole(op.get("to")) and 0 <= op["to"] < len(seen):
-            moved = seen[place]
-            if op["to"] == place:
-                meant["to"] = meant["layer"]                                    # a move that changes nothing as the sender sees it changes nothing
-            else:
-                meant["to"] = between([name for name in seen if name != moved], op["to"], [name for name in now if name != moved])
-        if kind == "add-layer" and whole(op.get("at")) and 0 <= op["at"] <= len(seen):
-            meant["at"] = between(seen, op["at"], now)
+        meant, kind = dict(op), op.get("op")
+        now = [layer["id"] for layer in self.project.layers]
+        if older(seen, now, "layer"):
+            for key in ("layer", "parent"):
+                place = op.get(key)
+                if whole(place) and 0 <= place < len(seen):
+                    if seen[place] not in now:
+                        raise ValueError(f"That layer {gone}")
+                    meant[key] = now.index(seen[place])
+            place = op.get("layer", 0)
+            if kind == "merge-down" and whole(place) and 0 <= place < len(seen):
+                if place == 0:
+                    raise ValueError("The bottom layer has nothing below it")  # as the sender sees it; what lies below it now was not meant
+                if meant["layer"] == 0 or now[meant["layer"] - 1] != seen[place - 1]:
+                    raise ValueError("Another layer lies below it now: the project was changed in the meantime. Look again, then merge.")
+            if kind == "move-layer" and whole(place) and 0 <= place < len(seen) and whole(op.get("to")) and 0 <= op["to"] < len(seen):
+                moved = seen[place]
+                if op["to"] == place:
+                    meant["to"] = meant["layer"]                                # a move that changes nothing as the sender sees it changes nothing
+                else:
+                    meant["to"] = between([name for name in seen if name != moved], op["to"], [name for name in now if name != moved], "layer")
+            if kind == "add-layer" and whole(op.get("at")) and 0 <= op["at"] <= len(seen):
+                meant["at"] = between(seen, op["at"], now, "layer")
+        now = [frame["id"] for frame in self.project.frames]
+        if older(frames, now, "frame"):
+            def one(place):
+                """A frame number of the sender's as the number that frame has now."""
+                if not whole(place) or not 0 <= place < len(frames):
+                    return place
+                if frames[place] not in now:
+                    raise ValueError(f"That frame {gone}")
+                return now.index(frames[place])
+
+            several = lambda value: [one(place) for place in value] if isinstance(value, list) else one(value)      # noqa: E731
+            for key in ("frame", "frames", "from", "copy"):          # "all" stays all
+                if key in op:
+                    meant[key] = several(op[key])
+            if isinstance(op.get("spread"), dict) and "frames" in op["spread"]:
+                meant["spread"] = dict(op["spread"], frames=several(op["spread"]["frames"]))
+            if kind == "add-frame" and whole(op.get("at")) and 0 <= op["at"] <= len(frames):
+                meant["at"] = between(frames, op["at"], now, "frame")
+            if kind == "move-frame" and whole(op.get("to")):
+                block = op["frames"] if isinstance(op.get("frames"), list) else [op.get("frame", 0)]
+                moved = {frames[place] for place in block if whole(place) and 0 <= place < len(frames)}
+                rest = [name for name in frames if name not in moved]
+                if 0 <= op["to"] <= len(rest):
+                    if rest[:op["to"]] + [name for name in frames if name in moved] + rest[op["to"]:] == frames:
+                        first = min(now.index(name) for name in moved if name in now) if moved & set(now) else 0
+                        meant["to"] = len([name for name in now[:first] if name not in moved])   # a move that changes nothing as the sender sees it changes nothing
+                    else:
+                        meant["to"] = between(rest, op["to"], [name for name in now if name not in moved], "frame")
         return meant
 
-    def change(self, op, by, seen=None):
+    def change(self, op, by, seen=None, frames=None):
         with self.lock:
-            op = self.meant(op, seen)
+            op = self.meant(op, seen, frames)
             before = self.project.snapshot()
             try:
                 note = self.project.apply(op)
@@ -164,11 +207,11 @@ class Studio:
         self.publish({"type": "changed", "rev": self.rev, "by": by, "note": note})
         return {"rev": self.rev, "note": note}
 
-    def preview(self, op, seen=None):
+    def preview(self, op, seen=None, frames=None):
         """What an operation would do, without doing it: per frame the cells that would change, and the
         changed cels of its layer."""
         with self.lock:
-            op = self.meant(op, seen)
+            op = self.meant(op, seen, frames)
             trial = self.project.snapshot()
             note = trial.apply(op)
             layer = int(op.get("layer", 0))
@@ -185,8 +228,9 @@ class Studio:
                     after[str(frame)] = base64.b64encode(png_bytes(new)).decode()
         return {"note": note, "layer": layer, "marks": marks, "after": after}
 
-    def make_loop(self, spec, frame, by):
-        """Turn one frame, as it looks, into a seamless loop that takes the place of the frames."""
+    def make_loop(self, spec, frame, by, frames=None):
+        """Turn one frame, as it looks, into a seamless loop that takes the place of the frames. `frames` is
+        the sender's list of frame ids, if it names the frame by its place there."""
         from . import loops
         from .options import keys
 
@@ -197,6 +241,7 @@ class Studio:
             raise ValueError("A loop needs at least one region")
         loops.validate(spec["regions"])
         with self.lock:
+            frame = self.meant({"frame": frame}, None, frames)["frame"]
             before = self.project.snapshot()
             still = self.project.composite(max(0, min(len(self.project.frames) - 1, int(frame))))
             images, durations = loops.animate(still, spec)
@@ -216,6 +261,7 @@ class Studio:
             snapshot, note, who = source.pop()
             target.append((self.project.snapshot(), note, who))
             snapshot.next_layer = max(snapshot.next_layer, self.project.next_layer)   # an id that was given stays given, also when its layer is taken back
+            snapshot.next_frame = max(snapshot.next_frame, self.project.next_frame)
             self.project = snapshot
             return self._changed(by, ("took back: " if back else "did again: ") + note)
 
@@ -420,19 +466,24 @@ def handler_for(studio):
             try:
                 raw = self.body()
                 data = {} if url.path == "/api/import" else json.loads(raw or b"{}")
-                if (query.get("run") or data.get("run") or studio.run) != studio.run:
+                sent = query.get("run") or data.get("run")
+                if sent and sent != studio.run:
                     # a page that was open before this studio started shows what an earlier one held, and that may be another project
                     return self.send(409, {"error": "The studio was started again since this page was opened. The page looks again.", "again": True})
+                if not sent and self.headers.get("Origin"):
+                    # a browser names where it comes from; a page of ours also names its run. One that does not was loaded
+                    # from an older studio, or is no page of ours at all
+                    return self.send(409, {"error": "This page is older than the studio. Reload it.", "again": True})
                 if url.path == "/api/import":
                     settings = json.loads(query.get("settings", "{}"))
                     return self.send(200, studio.bring_in(raw, query.get("name", "upload.png"), settings, query.get("how", "layer")))
                 by = "agent" if data.get("by") == "agent" else "you"
                 if url.path == "/api/op":
-                    return self.send(200, studio.change(data["op"], by, data.get("layers")))
+                    return self.send(200, studio.change(data["op"], by, data.get("layers"), data.get("frames")))
                 if url.path == "/api/loop":
-                    return self.send(200, studio.make_loop(data["loop"], data.get("frame", 0), by))
+                    return self.send(200, studio.make_loop(data["loop"], data.get("frame", 0), by, data.get("frames")))
                 if url.path == "/api/preview":
-                    return self.send(200, studio.preview(data["op"], data.get("layers")))
+                    return self.send(200, studio.preview(data["op"], data.get("layers"), data.get("frames")))
                 if url.path == "/api/undo":
                     return self.send(200, studio.step(True, by))
                 if url.path == "/api/redo":
