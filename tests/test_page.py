@@ -43,6 +43,8 @@ class Page(unittest.TestCase):
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
+        self.browser.open("about:blank")                                            # the page of the test before is gone first,
+        self.browser.until("window.studio ? 0 : 1")                                 # so that it is not taken for this one
         self.browser.open(self.url)
         self.browser.until("window.studio && window.studio.doc && document.querySelector('.cel') ? 1 : 0")
 
@@ -165,6 +167,28 @@ class Page(unittest.TestCase):
         self.assertTrue(below["cels"][0] is None or not below["cels"][0][..., 3].any())   # nothing on the layer that came in
         drawn = (scene["cels"][0] != self.scene).any(axis=2)
         self.assertEqual({(int(x), int(y)) for y, x in np.argwhere(drawn)}, {(x, 3) for x in range(3, 10)})   # the stroke is on the layer it was drawn on
+        self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Scene")
+
+    def test_a_page_that_outlived_its_studio_does_not_draw_into_the_next_one(self):
+        elsewhere = np.zeros((24, 32, 4), dtype=np.uint8)
+        elsewhere[...] = (30, 40, 50, 255)
+        other = Project.from_frames([elsewhere], [100], "Elsewhere")
+        with self.room.lock:                                                         # the studio stops and one with another project starts in its place:
+            self.room.project, self.room.run, self.room.rev = other, "the next run", 0   # for the page the same address, with another run behind it
+            self.room.undo.clear()
+            other.save(self.room.path)
+        self.browser.press(*self.cell(5, 5))                                         # the page still shows the old project, and its pencil comes down
+        self.browser.until("window.studio.doc.layers[0].name === 'Elsewhere' && window.studio.pending === 0 ? 1 : 0")   # turned away, it looks again
+        self.assertEqual(self.room.rev, 0)                                           # and nothing was drawn into the project it had never shown
+        self.assertTrue((Project.load(self.folder / "s.pixelcat").composite(0) == elsewhere).all())
+        self.browser.press(*self.cell(5, 5))                                         # now it draws on what it shows
+        self.browser.until("window.studio.meta.undo === 1 && window.studio.pending === 0 ? 1 : 0")
+        self.assertEqual(tuple(Project.load(self.folder / "s.pixelcat").composite(0)[5, 5]), (242, 166, 90, 255))
+
+    def test_a_page_looks_again_when_the_studio_it_hears_is_another_run(self):
+        self.room.project.apply({"op": "add-layer", "name": "Unheard"})              # something this page was never told
+        self.room.publish({"type": "hello", "run": "another run", "rev": 0})         # the line is back, and at its end is a studio that counts from nothing
+        self.browser.until("window.studio.doc.layers.length === 2 && window.studio.pending === 0 ? 1 : 0")
         self.assertEqual(self.browser.run("window.studio.doc.layers[window.studio.layer].name"), "Scene")
 
     def test_a_panel_takes_its_own_presses(self):

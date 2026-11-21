@@ -814,7 +814,39 @@ class Studios(unittest.TestCase):
         # whoever starts to listen is told first where the project stands: what changed before, it did not hear
         with urllib.request.urlopen(self.url + "/api/events", timeout=5) as stream:
             lines = [stream.readline().decode().strip() for _ in range(3)]
-        self.assertEqual(json.loads(lines[2].removeprefix("data: ")), {"type": "hello", "rev": self.call("/api/state")["meta"]["rev"]})
+        meta = self.call("/api/state")["meta"]
+        self.assertEqual(json.loads(lines[2].removeprefix("data: ")), {"type": "hello", "run": meta["run"], "rev": meta["rev"]})
+
+    def test_a_page_of_another_run_is_turned_away_and_the_view_names_the_layer_as_it_stands(self):
+        # a studio that is started again may hold another project: a page says which run it has its picture from
+        run = self.call("/api/state")["meta"]["run"]
+        draw = {"op": "draw", "color": "#ff0000", "points": [[1, 1]]}
+        with self.assertRaisesRegex(ValueError, "The studio was started again since this page was opened"):
+            self.call("/api/op", {"op": draw, "run": "an earlier one"})
+        request = urllib.request.Request(self.url + "/api/import?name=in.png&how=layer&run=earlier&settings=%7B%7D", data=png_bytes(np.zeros((8, 8, 4), dtype=np.uint8)), method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(request)
+        self.assertEqual((refused.exception.code, json.loads(refused.exception.read())["again"]), (409, True))
+        self.assertEqual(self.call("/api/state")["meta"]["rev"], 0)                        # nothing was changed
+        self.call("/api/op", {"op": draw, "run": run})                                     # the page of this run draws
+        self.call("/api/op", {"op": draw, "by": "agent"})                                  # and whoever names no run is taken at its word
+        # what the person has open reaches the agent as it stands now: the layer by its present place, with its name
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Rail"}})
+        seen = [layer["id"] for layer in self.call("/api/state")["doc"]["layers"]]
+        self.call("/api/op", {"op": {"op": "add-layer", "name": "Came in below", "at": 0}, "by": "agent"})
+        self.call("/api/view", {"frame": 0, "layer": 1, "layers": seen, "tool": "pencil"})   # the page shows the rail as layer 1
+        self.assertEqual(self.call("/api/look?as=json")["viewing"], {"frame": 0, "layer": 2, "tool": "pencil", "layerName": "Rail"})
+        self.call("/api/chat", {"text": "this one", "context": {"frame": 0, "layer": 0, "layers": seen, "color": "#ff0000"}})
+        said = self.call("/api/wait?slice=1")["messages"][-1]
+        self.assertEqual((said["context"]["layer"], said["context"]["layerName"]), (1, "Layer 1"))
+        self.call("/api/op", {"op": {"op": "remove-layer", "layer": 2}, "by": "agent"})    # the rail goes; a page that still shows it has no layer open
+        self.call("/api/view", {"frame": 0, "layer": 1, "layers": seen})
+        self.assertEqual(self.call("/api/look?as=json")["viewing"], {"frame": 0})
+        self.call("/api/view", {"frame": 0, "layer": 0, "layers": seen})                   # it turns to a layer that is there
+        self.call("/api/chat", {"text": "and this", "context": {"frame": 1, "layer": 1, "layers": seen}})   # and speaks with the gone one open
+        self.assertEqual(self.call("/api/look?as=json")["viewing"], {"frame": 1})          # the layer it had open before is not kept for it
+        with self.assertRaisesRegex(ValueError, "told as an object"):
+            self.call("/api/chat", {"text": "hm", "context": "the top layer"})
 
     def test_no_layer_gets_the_id_of_one_that_is_gone(self):
         ids = lambda: [layer["id"] for layer in self.call("/api/state")["doc"]["layers"]]   # noqa: E731

@@ -20,14 +20,19 @@ const SIZES = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 const view = $("view"), over = $("over"), stage = $("stage");
 
 // ---------------------------------------------------------------- talking to the server
-async function api(path, body) {
-  const response = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+async function api(path, body, run = S.run) {
+  // whatever this page asks for, it says which run of the studio it has its picture from: a studio that was started
+  // again may hold another project, and must not take this page's changes for it
+  const response = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, run }) });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "The studio did not answer");
+  if (!response.ok) { if (data.again) lookAgain(); throw new Error(data.error || "The studio did not answer"); }
   return data;
 }
+function lookAgain() { whenIdle(() => load(true).catch(fail)); }   // the studio is another one than this page knew
 let line = Promise.resolve();
-function send(path, body) { const run = line.then(() => api(path, body)); line = run.catch(() => {}); return run; }
+function send(path, body) {              // one after the other; each goes out under the run it was made for, however long it waits
+  const made = S.run, run = line.then(() => api(path, body, made)); line = run.catch(() => {}); return run;
+}
 // The layers as this page shows them, to go with every operation. A layer is named by its place in the list, and
 // the list here can be older than the project's: with this the server knows which layer is meant.
 const shown = () => ({ layers: S.doc.layers.map(layer => layer.id) });
@@ -44,7 +49,9 @@ async function decode(data) {
 async function load(flash) {
   const state = await api("/api/state");
   const held = S.doc && S.doc.layers[S.layer] ? S.doc.layers[S.layer].id : null;   // the layer in hand stays in hand, wherever a change puts it in the list
-  S.doc = state.doc; S.meta = state.meta; S.known = Math.max(S.known, state.meta.rev);
+  S.doc = state.doc; S.meta = state.meta;
+  if (state.meta.run !== S.run) { S.run = state.meta.run; S.known = state.meta.rev; }   // another run of the studio counts its changes from nothing
+  else S.known = Math.max(S.known, state.meta.rev);
   const again = S.doc.layers.findIndex(layer => layer.id === held); if (again >= 0) S.layer = again;
   const pictures = await Promise.all(state.doc.pictures.map(decode));   // each picture is opened once; every cel gets a canvas of its own, because drawing changes it
   const own = n => { const c = blank(); c.getContext("2d").drawImage(pictures[n], 0, 0); return c; };
@@ -636,7 +643,7 @@ function context() {
   $("context").replaceChildren("the agent sees: ", ...chips.map(text => { const s = document.createElement("span"); s.textContent = text; return s; }));
 }
 function viewNow() {
-  return { frame: S.frame, layer: S.layer, layerName: S.doc.layers[S.layer].name, color: S.colour, tool: S.tool, ...(S.sel ? { selection: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] } : {}) };
+  return { frame: S.frame, layer: S.layer, ...shown(), color: S.colour, tool: S.tool, ...(S.sel ? { selection: [S.sel.x, S.sel.y, S.sel.w, S.sel.h] } : {}) };
 }
 function reportView() { clearTimeout(reportView.timer); reportView.timer = setTimeout(() => api("/api/view", viewNow()).catch(() => {}), 300); }
 
@@ -884,8 +891,9 @@ function listen() {
     if (e.type === "chat") showMessage(e.message);
     if (e.type === "agent") { S.meta.listening = e.listening; chrome(); }
     // told where the project stands: if that is further than this page knows once its own work is done, something
-    // changed while nobody was listening, at the start or while the line was down
-    if (e.type === "hello") whenIdle(() => { if (e.rev > S.known) load(true).catch(fail); });
+    // changed while nobody was listening, at the start or while the line was down; and if the studio is another
+    // run than the one this page knows, everything may have
+    if (e.type === "hello") whenIdle(() => { if (e.run !== S.run || e.rev > S.known) load(true).catch(fail); });
     if (e.type === "changed") {
       if (e.by === "you" && (S.pending > 0 || e.rev <= S.known)) return;
       if (e.by === "agent") agentChanged(e.note);
@@ -1001,8 +1009,8 @@ $("importDialog").addEventListener("close", async () => {
   toast("Converting " + incoming.name + " …"); drop(); S.pending++;
   const how = $("importHow").value;
   try {
-    const response = await fetch(`/api/import?name=${encodeURIComponent(incoming.name)}&how=${$("importHow").value}&settings=${encodeURIComponent(JSON.stringify(settings))}`, { method: "POST", body: incoming });
-    const done = await response.json(); if (!response.ok) throw new Error(done.error);
+    const response = await fetch(`/api/import?name=${encodeURIComponent(incoming.name)}&how=${$("importHow").value}&run=${S.run}&settings=${encodeURIComponent(JSON.stringify(settings))}`, { method: "POST", body: incoming });
+    const done = await response.json(); if (!response.ok) { if (done.again) lookAgain(); throw new Error(done.error); }
     S.known = Math.max(S.known, done.rev); S.fitted = false; if (how === "project") S.guard = null; await load(true);   // another picture: its protection goes with the old one
     if (how === "layer") { S.layer = S.doc.layers.length - 1; S.sel = null; setTool("move"); layers(); timeline(); context(); draw(); }   // in hand, ready to be moved into place
     toast(`${done.summary.width} × ${done.summary.height} cells, ${done.summary.frames} frame${done.summary.frames > 1 ? "s" : ""}, ${done.summary.colors} colours`);

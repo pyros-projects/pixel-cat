@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import queue
+import secrets
 import tempfile
 import threading
 import time
@@ -41,6 +42,7 @@ class Studio:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.project.save(self.path)
         self.lock = threading.RLock()
+        self.run = secrets.token_hex(4)       # this run of the studio: a page that outlived another run can tell
         self.rev = 0
         self.undo, self.redo = [], []
         self.listeners = []
@@ -68,6 +70,26 @@ class Studio:
             self.publish({"type": "agent", "listening": now})
 
     # ------------------------------------------------------------ the project
+
+    def looking(self, view):
+        """What the person has open, as a page reports it, the way it stands in the project now. The page names
+        its layer by the place in the list it shows and sends that list along as `layers`; an agent reads the
+        place the layer has now, with its name, or no layer at all if it is gone."""
+        if not isinstance(view, dict):
+            raise ValueError("What the person has open is told as an object: frame, layer and so on")
+        seen = view.get("layers")
+        view = {key: view[key] for key in ("frame", "layer", "selection", "color", "tool") if key in view}
+        with self.lock:
+            layers, place = self.project.layers, view.get("layer")
+            if isinstance(seen, list) and isinstance(place, int) and not isinstance(place, bool) and 0 <= place < len(seen):
+                now = [layer["id"] for layer in layers]
+                view["layer"] = now.index(seen[place]) if seen[place] in now else None
+            place = view.get("layer")
+            if isinstance(place, int) and not isinstance(place, bool) and 0 <= place < len(layers):
+                view["layerName"] = layers[place]["name"]
+            else:
+                view.pop("layer", None)
+        return view
 
     def put(self, project):
         """Another project takes the place of this one. Its layers get ids that were never given here, so that
@@ -200,7 +222,7 @@ class Studio:
     def state(self):
         with self.lock:
             return {"meta": {"name": self.path.name, "path": str(self.path), "agent": self.agent, "listening": self.listening(),
-                             "rev": self.rev, "undo": len(self.undo), "redo": len(self.redo),
+                             "run": self.run, "rev": self.rev, "undo": len(self.undo), "redo": len(self.redo),
                              "last": self.undo[-1][1:] if self.undo else None},
                     "doc": self.document(), "chat": self.chat[-200:]}
 
@@ -397,10 +419,13 @@ def handler_for(studio):
             query = {k: v[0] for k, v in parse_qs(url.query).items()}
             try:
                 raw = self.body()
+                data = {} if url.path == "/api/import" else json.loads(raw or b"{}")
+                if (query.get("run") or data.get("run") or studio.run) != studio.run:
+                    # a page that was open before this studio started shows what an earlier one held, and that may be another project
+                    return self.send(409, {"error": "The studio was started again since this page was opened. The page looks again.", "again": True})
                 if url.path == "/api/import":
                     settings = json.loads(query.get("settings", "{}"))
                     return self.send(200, studio.bring_in(raw, query.get("name", "upload.png"), settings, query.get("how", "layer")))
-                data = json.loads(raw or b"{}")
                 by = "agent" if data.get("by") == "agent" else "you"
                 if url.path == "/api/op":
                     return self.send(200, studio.change(data["op"], by, data.get("layers")))
@@ -413,14 +438,15 @@ def handler_for(studio):
                 if url.path == "/api/redo":
                     return self.send(200, studio.step(False, by))
                 if url.path == "/api/view":
-                    studio.view = {k: data[k] for k in ("frame", "layer", "selection", "color", "tool") if k in data}
+                    studio.view = studio.looking(data)
                     return self.send(200, {})
                 if url.path == "/api/chat":
                     text = str(data.get("text", "")).strip()
                     if not text:
                         raise ValueError("Write something first")
-                    context = data.get("context") or {}
-                    studio.view = {**studio.view, **context}
+                    context = studio.looking(data.get("context") or {})
+                    if context:                                       # a page tells all of what it has open with every message
+                        studio.view = context
                     studio.say("you", text, context=context)
                     if studio.agent:
                         studio.inbox.put({"text": text, "context": context})
@@ -444,7 +470,7 @@ def handler_for(studio):
             studio.listeners.append(mine)
             try:
                 # first where the project stands: what changed before this listener was there, it has not heard
-                self.wfile.write(f": connected\n\ndata: {json.dumps({'type': 'hello', 'rev': studio.rev})}\n\n".encode())
+                self.wfile.write(f": connected\n\ndata: {json.dumps({'type': 'hello', 'run': studio.run, 'rev': studio.rev})}\n\n".encode())
                 self.wfile.flush()
                 while True:
                     try:
