@@ -49,7 +49,7 @@ class Studio:
         self.chat = []
         self.inbox = queue.Queue()
         self.heard = 0.0                      # when an agent last waited for a message
-        self.view = {"frame": 0, "layer": 0}  # what the person has open
+        self.remember_view({"frame": 0, "layer": 0})
         self.listening_shown = False
         self.turned = {}                      # turned cels as PNG text, kept while they are shown
 
@@ -98,6 +98,14 @@ class Studio:
             else:
                 view.pop("layer", None)
         return view
+
+    def remember_view(self, view):
+        """Keep the ids with the last reported places, so a later look can find them again."""
+        with self.lock:
+            current = self.looking(view)
+            self.view = {**current, "frames": [frame["id"] for frame in self.project.frames],
+                         "layers": [layer["id"] for layer in self.project.layers]}
+            return current
 
     def put(self, project):
         """Another project takes the place of this one. Its layers get ids that were never given here, so that
@@ -421,7 +429,7 @@ def handler_for(studio):
                     return self.send(200, {"messages": messages, "project": studio.path.name})
                 if url.path == "/api/look":
                     with studio.lock:
-                        view = dict(studio.view)
+                        view = studio.looking(studio.view)
                         frame = int(query.get("frame", view.get("frame", 0)))
                         frame = max(0, min(len(studio.project.frames) - 1, frame))
                         layer = int(query["layer"]) if "layer" in query else None
@@ -493,15 +501,13 @@ def handler_for(studio):
                 if url.path == "/api/redo":
                     return self.send(200, studio.step(False, by))
                 if url.path == "/api/view":
-                    studio.view = studio.looking(data)
+                    studio.remember_view(data)
                     return self.send(200, {})
                 if url.path == "/api/chat":
                     text = str(data.get("text", "")).strip()
                     if not text:
                         raise ValueError("Write something first")
-                    context = studio.looking(data.get("context") or {})
-                    if context:                                       # a page tells all of what it has open with every message
-                        studio.view = context
+                    context = studio.remember_view(data["context"]) if data.get("context") else {}
                     studio.say("you", text, context=context)
                     if studio.agent:
                         studio.inbox.put({"text": text, "context": context})

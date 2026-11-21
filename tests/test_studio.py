@@ -1135,6 +1135,20 @@ class Studios(unittest.TestCase):
         self.assertEqual([(m["from"], m["text"]) for m in self.call("/api/state")["chat"]], [("you", "make it blue"), ("agent", "Done.")])
         self.assertEqual(self.call("/api/look?as=json")["viewing"]["selection"], [1, 2, 3, 4])
 
+    def test_looking_keeps_the_reported_frame_and_layer_as_the_project_changes(self):
+        doc = self.call("/api/state")["doc"]
+        self.call("/api/view", {"frame": 0, "layer": 0, "frames": [doc["frames"][0]["id"]], "layers": [doc["layers"][0]["id"]]})
+        self.call("/api/op", {"op": {"op": "draw", "color": "#00ff00", "rect": [0, 0, 8, 8]}})
+        self.call("/api/op", {"op": {"op": "add-layer", "at": 0}})
+        self.call("/api/op", {"op": {"op": "add-frame", "at": 0}})
+        view = self.call("/api/look?as=json")["viewing"]
+        self.assertEqual((view["frame"], view["layer"], view["layerName"]), (1, 1, "Layer 1"))
+        with urllib.request.urlopen(self.url + "/api/look?scale=1") as reply:
+            self.assertEqual(Image.open(reply).getpixel((0, 0)), (0, 255, 0, 255))
+        self.call("/api/op", {"op": {"op": "remove-layer", "layer": 1}})
+        self.call("/api/op", {"op": {"op": "remove-frame", "frame": 1}})
+        self.assertEqual(self.call("/api/look?as=json")["viewing"], {})
+
     def test_looking_shows_the_frame_enlarged(self):
         self.call("/api/op", {"op": {"op": "draw", "color": "#00ff00", "rect": [0, 0, 8, 8]}})
         with urllib.request.urlopen(self.url + "/api/look?scale=4") as response:
